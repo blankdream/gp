@@ -1,0 +1,1 @@
+[代码快捷提示](https://vkdoc.fsq.pub/client/codeTips.html)

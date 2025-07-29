@@ -1,0 +1,21 @@
+{
+  "bsonType": "object",
+  "required": ["uid", "group_name"],
+  "properties": {
+    "_id": {
+      "description": "ID"
+    },
+    "uid": {
+      "bsonType": "string",
+      "description": "用户ID"
+    },
+    "group_name": {
+      "bsonType": "string",
+      "description": "分组名称"
+    },
+    "create_time": {
+      "bsonType": "timestamp",
+      "description": "创建时间"
+    }
+  }
+}

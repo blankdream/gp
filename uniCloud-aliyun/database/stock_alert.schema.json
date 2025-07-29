@@ -1,0 +1,46 @@
+{
+  "bsonType": "object",
+  "required": ["uid", "stock_code", "alert_type"],
+  "properties": {
+    "_id": {
+      "description": "ID"
+    },
+    "uid": {
+      "bsonType": "string",
+      "description": "用户ID"
+    },
+    "stock_code": {
+      "bsonType": "string",
+      "description": "股票代码"
+    },
+    "stock_name": {
+      "bsonType": "string",
+      "description": "股票名称"
+    },
+    "alert_type": {
+      "bsonType": "string",
+      "description": "预警类型：price|percent"
+    },
+    "condition": {
+      "bsonType": "string",
+      "description": "条件：>|<"
+    },
+    "target_value": {
+      "bsonType": "double",
+      "description": "目标值"
+    },
+    "is_active": {
+      "bsonType": "bool",
+      "description": "是否激活",
+      "default": true
+    },
+    "create_time": {
+      "bsonType": "timestamp",
+      "description": "创建时间"
+    },
+    "update_time": {
+      "bsonType": "timestamp",
+      "description": "更新时间"
+    }
+  }
+}

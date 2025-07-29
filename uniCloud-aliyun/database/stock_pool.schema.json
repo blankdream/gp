@@ -1,0 +1,41 @@
+{
+  "bsonType": "object",
+  "required": ["uid", "stock_code"],
+  "properties": {
+    "_id": {
+      "description": "ID"
+    },
+    "uid": {
+      "bsonType": "string",
+      "description": "用户ID"
+    },
+    "stock_code": {
+      "bsonType": "string", 
+      "description": "股票代码，如 sh600000"
+    },
+    "stock_name": {
+      "bsonType": "string",
+      "description": "股票名称"
+    },
+    "group_name": {
+      "bsonType": "string",
+      "description": "分组名称"
+    },
+    "remark": {
+      "bsonType": "string",
+      "description": "备注"
+    },
+    "sort_order": {
+      "bsonType": "int",
+      "description": "排序顺序"
+    },
+    "create_time": {
+      "bsonType": "timestamp",
+      "description": "创建时间"
+    },
+    "update_time": {
+      "bsonType": "timestamp", 
+      "description": "更新时间"
+    }
+  }
+}

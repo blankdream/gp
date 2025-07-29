@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <title>首页（股票池）原型图</title>
+  <style>
+    body { background: #f7f8fa; font-family: 'Segoe UI', Arial, sans-serif; }
+    .main { max-width: 420px; margin: 32px auto; background: #fff; border-radius: 12px; box-shadow: 0 2px 8px #0001; padding: 32px 24px; }
+    h2 { text-align: center; margin-bottom: 24px; }
+    .search-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+    .search-bar input { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; }
+    .search-bar button { padding: 8px 16px; border: none; background: #1976d2; color: #fff; border-radius: 6px; cursor: pointer; }
+    .group-filter { margin-bottom: 16px; }
+    .group-filter select { padding: 6px 12px; border-radius: 6px; border: 1px solid #ddd; }
+    .stock-list { border-top: 1px solid #eee; }
+    .stock-item { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: background .2s; user-select: none; }
+    .stock-item:hover { background: #f5faff; }
+    .dragging { opacity: 0.5; background: #e3eafc !important; }
+    .drag-over { border: 2px dashed #1976d2 !important; }
+    .stock-main { display: flex; flex-direction: column; }
+    .stock-name { font-weight: bold; font-size: 1em; white-space: nowrap; }
+    .stock-meta { color: #888; font-size: 0.92em; white-space: nowrap; }
+    .stock-price { font-size: 1.08em; font-weight: bold; white-space: nowrap; }
+    .stock-up { color: #e53935; white-space: nowrap; }
+    .stock-down { color: #388e3c; white-space: nowrap; }
+    .expand-detail { background: #f9f9fb; border-radius: 8px; margin: 10px 0 0 0; padding: 12px; font-size: 0.93em; }
+    .expand-detail > div[style*='grid'] > div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .kline { margin-top: 12px; background: #f3f6fa; border-radius: 8px; height: 100px; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 0.93em; }
+    .remark { color: #1976d2; font-size: 0.93em; margin-top: 6px; }
+    .actions { margin-top: 16px; text-align: right; }
+    .actions button { margin-left: 8px; padding: 5px 12px; border: none; border-radius: 6px; background: #eee; cursor: pointer; font-size: 0.95em; }
+    .actions button.primary { background: #1976d2; color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="main">
+    <!-- 去除标题 -->
+    <div class="group-filter" style="display:flex;align-items:center;gap:8px;">
+      <select id="mainGroupSelect"></select>
+      <button id="groupManageBtn" style="padding:6px 12px;border:none;background:#eee;border-radius:6px;cursor:pointer;font-size:0.97em;">分组管理</button>
+    </div>
+    <script>
+// 分组管理功能
+let groupList = ["自选", "科技股", "银行"];
+function renderMainGroupSelect() {
+  const sel = document.getElementById('mainGroupSelect');
+  if(!sel) return;
+  sel.innerHTML = '<option value="">全部分组</option>' + groupList.map(g=>`<option value="${g}">${g}</option>`).join('');
+}
+renderMainGroupSelect();
+
+// 分组管理弹窗
+function showGroupManageModal() {
+  if(document.getElementById('groupManageModal')) return document.getElementById('groupManageModal').style.display='flex';
+  const modal = document.createElement('div');
+  modal.id = 'groupManageModal';
+  modal.style = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:300;display:flex;align-items:center;justify-content:center;background:#0005;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:10px;box-shadow:0 2px 16px #0002;padding:26px 22px 18px 22px;min-width:260px;max-width:92vw;">
+      <div style="font-weight:bold;margin-bottom:14px;text-align:center;">分组管理</div>
+      <div id="groupListBox" style="max-height:180px;overflow-y:auto;margin-bottom:12px;"></div>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <input id="newGroupInput" type="text" placeholder="新分组名称" style="flex:1;padding:6px 10px;border:1px solid #ddd;border-radius:5px;font-size:1em;">
+        <button onclick="addGroup()" style="padding:6px 12px;border:none;background:#1976d2;color:#fff;border-radius:6px;cursor:pointer;">添加</button>
+      </div>
+      <div style="text-align:right;">
+        <button onclick="closeGroupManageModal()" style="padding:6px 18px;border:none;border-radius:6px;background:#eee;cursor:pointer;">关闭</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  renderGroupListBox();
+}
+function renderGroupListBox() {
+  const box = document.getElementById('groupListBox');
+  if(!box) return;
+  box.innerHTML = groupList.length ? groupList.map((g,i)=>`<div style='display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f3f3f3;'><span>${g}</span><button onclick="removeGroup(${i})" style='padding:2px 10px;font-size:0.95em;background:#eee;border:none;border-radius:5px;cursor:pointer;'>删除</button></div>`).join('') : '<div style="color:#888;padding:10px 0;">暂无分组</div>';
+}
+function addGroup() {
+  const val = document.getElementById('newGroupInput').value.trim();
+  if(val && !groupList.includes(val)) {
+    groupList.push(val);
+    renderGroupListBox();
+    renderMainGroupSelect();
+    renderModalGroupSelect();
+    document.getElementById('newGroupInput').value = '';
+  }
+}
+function removeGroup(idx) {
+  groupList.splice(idx,1);
+  renderGroupListBox();
+  renderMainGroupSelect();
+  renderModalGroupSelect();
+}
+function closeGroupManageModal() {
+  document.getElementById('groupManageModal').style.display = 'none';
+}
+document.addEventListener('DOMContentLoaded',function(){
+  document.getElementById('groupManageBtn').onclick = showGroupManageModal;
+});
+
+// 弹窗分组下拉与主分组联动
+function renderModalGroupSelect() {
+  const sel = document.getElementById('modalGroup');
+  if(!sel) return;
+  sel.innerHTML = groupList.map(g=>`<option value="${g}">${g}</option>`).join('') + '<option value="">自定义...</option>';
+}
+    </script>
+    <div class="stock-list">
+      <div class="stock-header" style="display:flex;align-items:center;justify-content:space-between;padding:8px 0 8px 0;font-weight:bold;background:#f3f6fa;border-bottom:1px solid #e0e0e0;font-size:0.97em;">
+        <span style="flex:1;min-width:60px;text-align:left;">名称</span>
+        <span style="min-width:70px;text-align:center;">实时价格</span>
+        <span style="min-width:70px;text-align:center;">涨跌幅</span>
+        <span style="min-width:70px;text-align:center;">换手率</span>
+      </div>
+      <!-- 股票1：浦发银行 -->
+      <div class="stock-item" draggable="true" onmousedown="onStockMouseDown(event,0)" ondragstart="onDragStart(event,0)" ondragover="onDragOver(event,0)" ondrop="onDrop(event,0)" ondragend="onDragEnd(event)" onclick="toggleDetail('detail1')">
+        <span class="stock-name" style="flex:1;min-width:60px;text-align:left;">浦发银行</span>
+        <span class="stock-price stock-up" style="min-width:70px;text-align:center;">10.12</span>
+        <span class="stock-up" style="min-width:70px;text-align:center;">+0.20%</span>
+        <span style="color:#1976d2;min-width:70px;text-align:center;">2.1%</span>
+      </div>
+      <div class="expand-detail" id="detail1" style="display:none;">
+        <div style="font-weight:bold;margin-bottom:8px;">浦发银行（600000）</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;font-size:0.98em;">
+          <div>股票代码：600000</div><div>昨收：10.10</div>
+          <div>今开：10.13</div><div>实时价：10.12</div>
+          <div>成交量(手)：123456</div><div>成交额(元)：123456</div>
+          <div>涨跌额：+0.02</div><div>涨跌幅：+0.20%</div>
+          <div>市盈率：8.5</div><div>总市值：1000亿</div>
+          <div>流通市值：900亿</div><div>换手率：2.1%</div>
+          <div>振幅：1.5%</div><div>最高：10.20</div>
+          <div>最低：10.05</div><div>52周高：12.00</div>
+          <div>52周低：8.00</div><div>备注：银行龙头</div>
+        </div>
+        <div class="kline">[K线图区域]</div>
+        <!-- 去除详情操作按钮 -->
+      </div>
+      <!-- 股票2：腾讯控股 -->
+      <div class="stock-item" draggable="true" onmousedown="onStockMouseDown(event,1)" ondragstart="onDragStart(event,1)" ondragover="onDragOver(event,1)" ondrop="onDrop(event,1)" ondragend="onDragEnd(event)" onclick="toggleDetail('detail2')">
+        <span class="stock-name" style="flex:1;min-width:60px;text-align:left;">腾讯控股</span>
+        <span class="stock-price stock-down" style="min-width:70px;text-align:center;">319.80</span>
+        <span class="stock-down" style="min-width:70px;text-align:center;">-0.06%</span>
+        <span style="color:#1976d2;min-width:70px;text-align:center;">1.3%</span>
+      </div>
+      <div class="expand-detail" id="detail2" style="display:none;">
+        <div style="font-weight:bold;margin-bottom:8px;">腾讯控股（00700）</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;font-size:0.98em;">
+          <div>股票代码：00700</div><div>昨收：320.00</div>
+          <div>今开：321.00</div><div>实时价：319.80</div>
+          <div>成交量(手)：654321</div><div>成交额(元)：888888</div>
+          <div>涨跌额：-0.20</div><div>涨跌幅：-0.06%</div>
+          <div>市盈率：25.1</div><div>总市值：3.1万亿</div>
+          <div>流通市值：2.8万亿</div><div>换手率：1.3%</div>
+          <div>振幅：2.2%</div><div>最高：322.00</div>
+          <div>最低：318.00</div><div>52周高：400.00</div>
+          <div>52周低：280.00</div><div>备注：科技龙头</div>
+        </div>
+        <div class="kline">[K线图区域]</div>
+        <!-- 去除详情操作按钮 -->
+      </div>
+    </div>
+    <div class="search-bar" style="margin-top:18px;position:relative;">
+      <input type="text" id="searchInput" placeholder="搜索股票代码/名称" oninput="onSearchInput(this.value)" autocomplete="off">
+      <div id="searchDropdown" style="display:none;position:absolute;left:0;right:0;top:38px;z-index:10;background:#fff;border:1px solid #e0e0e0;border-radius:6px;box-shadow:0 2px 8px #0001;max-height:220px;overflow-y:auto;">
+        <!-- 搜索结果下拉项由JS动态填充 -->
+      </div>
+    </div>
+<script>
+// 拖拽排序原型实现
+let dragIndex = null;
+let dragOverIndex = null;
+let dragTimer = null;
+function onStockMouseDown(e, idx) {
+  // 长按400ms后激活拖拽
+  dragTimer = setTimeout(() => {
+    const items = document.querySelectorAll('.stock-item');
+    items[idx].draggable = true;
+    items[idx].dispatchEvent(new DragEvent('dragstart', {bubbles:true}));
+  }, 400);
+  document.onmouseup = () => { clearTimeout(dragTimer); document.onmouseup = null; };
+}
+function onDragStart(e, idx) {
+  dragIndex = idx;
+  e.target.classList.add('dragging');
+}
+function onDragOver(e, idx) {
+  e.preventDefault();
+  dragOverIndex = idx;
+  const items = document.querySelectorAll('.stock-item');
+  items.forEach((el, i) => el.classList.toggle('drag-over', i === idx));
+}
+function onDrop(e, idx) {
+  e.preventDefault();
+  if (dragIndex === null || dragIndex === idx) return;
+  // 这里只做静态原型，实际应交换数据并重渲染
+  alert('原型演示：将第'+(dragIndex+1)+'行拖到第'+(idx+1)+'行');
+  onDragEnd();
+}
+function onDragEnd() {
+  dragIndex = null; dragOverIndex = null;
+  document.querySelectorAll('.stock-item').forEach(el => {
+    el.classList.remove('dragging','drag-over');
+    el.draggable = false;
+  });
+  clearTimeout(dragTimer);
+}
+// 展开/收起详情
+function toggleDetail(id) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'block' : 'none';
+  document.querySelectorAll('.expand-detail').forEach(function(div) {
+    if (div.id !== id) div.style.display = 'none';
+  });
+}
+// 模拟搜索接口数据
+const mockStocks = [
+  { code: '600000', name: '浦发银行', market: 'A股' },
+  { code: '00700', name: '腾讯控股', market: '港股' },
+  { code: '000001', name: '平安银行', market: 'A股' },
+  { code: '600519', name: '贵州茅台', market: 'A股' },
+  { code: '601318', name: '中国平安', market: 'A股' },
+  { code: '000333', name: '美的集团', market: 'A股' },
+  { code: '000002', name: '万 科Ａ', market: 'A股' }
+];
+function onSearchInput(val) {
+  const dropdown = document.getElementById('searchDropdown');
+  if (!val.trim()) {
+    dropdown.style.display = 'none';
+    dropdown.innerHTML = '';
+    return;
+  }
+  // 模拟接口过滤
+  const result = mockStocks.filter(s => s.name.includes(val) || s.code.includes(val));
+  if (result.length === 0) {
+    dropdown.innerHTML = '<div style="padding:10px;color:#888;">无匹配股票</div>';
+    dropdown.style.display = 'block';
+    return;
+  }
+  dropdown.innerHTML = result.map(s => `<div onclick="selectStock('${s.code}','${s.name}','${s.market}')" style='padding:10px 16px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>${s.name} <span style='color:#888;font-size:0.95em;'>${s.code} | ${s.market}</span></div>`).join('');
+  dropdown.style.display = 'block';
+}
+// 添加股票弹窗逻辑
+function selectStock(code, name, market) {
+  document.getElementById('searchDropdown').style.display = 'none';
+  // 若弹窗不存在则创建
+  if (!document.getElementById('addModal')) {
+    const modal = document.createElement('div');
+    modal.id = 'addModal';
+    modal.style = 'position:fixed;left:0;top:0;right:0;bottom:0;z-index:200;display:flex;align-items:center;justify-content:center;background:#0005;';
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:10px;box-shadow:0 2px 16px #0002;padding:28px 22px 18px 22px;min-width:260px;max-width:92vw;">
+        <div id="modalStockName" style="font-weight:bold;margin-bottom:16px;text-align:center;"></div>
+        <div style="margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+          <label style='min-width:48px;color:#555;'>分组</label>
+          <select id="modalGroup" style="flex:1;padding:6px 10px;border:1px solid #ddd;border-radius:5px;font-size:1em;">
+            <option value="自选">自选</option>
+            <option value="科技股">科技股</option>
+            <option value="银行">银行</option>
+            <option value="">自定义...</option>
+          </select>
+          <input id="modalGroupCustom" type="text" placeholder="新分组" style="display:none;flex:1;padding:6px 10px;border:1px solid #ddd;border-radius:5px;font-size:1em;">
+        </div>
+        <div style="margin-bottom:14px;display:flex;align-items:flex-start;gap:10px;"><label style='min-width:48px;color:#555;margin-top:6px;'>备注</label><textarea id="modalRemark" placeholder="可选" rows="3" style="flex:1;padding:6px 10px;border:1px solid #ddd;border-radius:5px;font-size:1em;resize:vertical;"></textarea></div>
+        <div style="text-align:right;margin-top:10px;">
+          <button onclick="closeModal()" style="padding:6px 18px;border:none;border-radius:6px;background:#eee;cursor:pointer;">取消</button>
+          <button onclick="confirmAddStock()" style="padding:6px 18px;border:none;border-radius:6px;background:#1976d2;color:#fff;cursor:pointer;margin-left:10px;">确定</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+  document.getElementById('modalStockName').innerHTML = `${name} <span style='color:#888;font-size:0.95em;'>${code} | ${market}</span>`;
+  document.getElementById('addModal').style.display = 'flex';
+  // 分组下拉切换自定义，分组联动
+  renderModalGroupSelect();
+  const groupSel = document.getElementById('modalGroup');
+  const groupCustom = document.getElementById('modalGroupCustom');
+  groupSel.onchange = function() {
+    if(this.value === '') {
+      groupCustom.style.display = '';
+      groupCustom.focus();
+    } else {
+      groupCustom.style.display = 'none';
+    }
+  };
+  groupCustom.style.display = groupSel.value === '' ? '' : 'none';
+  window._addStock = { code, name, market };
+}
+function closeModal() {
+  const modal = document.getElementById('addModal');
+  if(modal) modal.style.display = 'none';
+  window._addStock = null;
+}
+function confirmAddStock() {
+  let group = document.getElementById('modalGroup').value;
+  const groupCustom = document.getElementById('modalGroupCustom').value;
+  if(group === '') group = groupCustom;
+  const remark = document.getElementById('modalRemark').value;
+  const stock = window._addStock;
+  if (!stock) return;
+  // 动态插入到首页列表（静态原型，直接插入DOM）
+  const list = document.querySelector('.stock-list');
+  // 生成唯一id
+  const id = 'detail_' + Date.now();
+  const up = Math.random() > 0.5;
+  const price = (Math.random()*100+10).toFixed(2);
+  const percent = (Math.random()*5*(up?1:-1)).toFixed(2);
+  const turnover = (Math.random()*5+0.5).toFixed(1)+'%';
+  const item = document.createElement('div');
+  item.className = 'stock-item';
+  item.setAttribute('draggable','true');
+  item.setAttribute('onmousedown',`onStockMouseDown(event,0)`);
+  item.setAttribute('ondragstart',`onDragStart(event,0)`);
+  item.setAttribute('ondragover',`onDragOver(event,0)`);
+  item.setAttribute('ondrop',`onDrop(event,0)`);
+  item.setAttribute('ondragend',`onDragEnd(event)`);
+  item.setAttribute('onclick',`toggleDetail('${id}')`);
+  item.innerHTML = `
+    <span class="stock-name" style="flex:1;min-width:60px;text-align:left;">${stock.name}</span>
+    <span class="stock-price ${up?'stock-up':'stock-down'}" style="min-width:70px;text-align:center;">${price}</span>
+    <span class="${up?'stock-up':'stock-down'}" style="min-width:70px;text-align:center;">${percent>0?'+':''}${percent}%</span>
+    <span style="color:#1976d2;min-width:70px;text-align:center;">${turnover}</span>
+  `;
+  // 详情
+  const detail = document.createElement('div');
+  detail.className = 'expand-detail';
+  detail.id = id;
+  detail.style.display = 'none';
+  detail.innerHTML = `
+    <div style="font-weight:bold;margin-bottom:8px;">${stock.name}（${stock.code}）</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;font-size:0.98em;">
+      <div>股票代码：${stock.code}</div><div>分组：${group||'--'}</div>
+      <div>备注：${remark||'--'}</div><div>实时价：${price}</div>
+      <div>涨跌幅：${percent>0?'+':''}${percent}%</div><div>换手率：${turnover}</div>
+    </div>
+    <div class="kline">[K线图区域]</div>
+  `;
+  // 插入到列表顶部
+  list.insertBefore(item, list.children[1]);
+  list.insertBefore(detail, list.children[2]);
+  closeModal();
+  document.getElementById('searchInput').value = '';
+}
+// 点击页面其它区域关闭下拉
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.search-bar')) {
+    document.getElementById('searchDropdown').style.display = 'none';
+  }
+});
+</script>
+
+<!-- 底部Tab栏 -->
+<div style="position:fixed;left:0;right:0;bottom:0;height:56px;background:#fff;border-top:1px solid #e0e0e0;display:flex;z-index:100;max-width:420px;margin:auto;box-shadow:0 -2px 8px #0001;">
+  <div onclick="onTabClick(0)" style="flex:1;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.98em;">首页</div>
+  <div onclick="onTabClick(1)" style="flex:1;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.98em;">预警中心</div>
+  <div onclick="onTabClick(2)" style="flex:1;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.98em;">个人中心</div>
+</div>
+<script>
+function onTabClick(idx) {
+  if(idx===0){ alert('已在首页'); }
+  else if(idx===1){ alert('跳转到预警中心（原型演示）'); }
+  else if(idx===2){ alert('跳转到个人中心（原型演示）'); }
+}
+</script>
+</body>
+</html>

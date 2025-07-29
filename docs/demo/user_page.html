@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+<head>
+  <meta charset="UTF-8">
+  <title>个人中心原型图</title>
+  <style>
+    body { background: #f7f8fa; font-family: 'Segoe UI', Arial, sans-serif; }
+    .main { max-width: 400px; margin: 32px auto; background: #fff; border-radius: 12px; box-shadow: 0 2px 8px #0001; padding: 32px 24px; }
+    h2 { text-align: center; margin-bottom: 24px; }
+    .user-info { margin-bottom: 18px; }
+    .user-info .label { color: #888; margin-right: 8px; }
+    .actions { margin-top: 18px; text-align: right; }
+    .actions button { margin-left: 8px; padding: 6px 14px; border: none; border-radius: 6px; background: #eee; cursor: pointer; }
+    .actions button.primary { background: #1976d2; color: #fff; }
+    .theme-bar { margin-top: 24px; text-align: right; }
+    .theme-bar button { background: #1976d2; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="main">
+    <!-- 去除标题 -->
+    <div class="user-info">
+      <div><span class="label">用户名：</span>张三</div>
+      <div><span class="label">手机号：</span>138****8888</div>
+      <div><span class="label">登录状态：</span>已登录</div>
+    </div>
+    <div class="actions">
+      <button>退出登录</button>
+      <button class="primary">修改信息</button>
+    </div>
+    <div class="theme-bar">
+      <button>切换主题</button>
+    </div>
+  </div>
+
+<!-- 底部Tab栏 -->
+<div style="position:fixed;left:0;right:0;bottom:0;height:56px;background:#fff;border-top:1px solid #e0e0e0;display:flex;z-index:100;max-width:400px;margin:auto;box-shadow:0 -2px 8px #0001;">
+  <div onclick="onTabClick(0)" style="flex:1;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.98em;">首页</div>
+  <div onclick="onTabClick(1)" style="flex:1;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:0.98em;">预警中心</div>
+  <div onclick="onTabClick(2)" style="flex:1;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#1976d2;font-weight:bold;font-size:0.98em;">个人中心</div>
+</div>
+<script>
+function onTabClick(idx) {
+  if(idx===0){ window.location.href='index_page.html'; }
+  else if(idx===1){ window.location.href='alert_page.html'; }
+  else if(idx===2){ alert('已在个人中心'); }
+}
+</script>
+</body>
+</html>

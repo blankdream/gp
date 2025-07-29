@@ -1,0 +1,243 @@
+{
+	"pages": [{
+			"path": "pages/index/index",
+			"style": {
+				"navigationBarTitleText": "股票池",
+				"enablePullDownRefresh": true
+			}
+		},
+		{
+			"path": "pages/alert/alert",
+			"style": {
+				"navigationBarTitleText": "预警中心"
+			}
+		},
+		{
+			"path": "pages/user/user",
+			"style": {
+				"navigationBarTitleText": "个人中心"
+			}
+		},
+		{
+			"path": "pages/test/test",
+			"style": {
+				"navigationBarTitleText": "演示页面"
+			}
+		}
+	],
+	"subPackages": [{
+		"root": "pages_template",
+		"pages": [{
+				"path": "db-test/db-test",
+				"style": {
+					"navigationBarTitleText": "数据库API演示"
+				}
+			},
+			{
+				"path": "db-test/list/list",
+				"style": {
+					"navigationBarTitleText": "列表加载演示"
+				}
+			},
+			{
+				"path": "uni-id/index/index",
+				"style": {
+					"navigationBarTitleText": "【开箱即用】vk-uniCloud-router - 云函数路由模式 - uniCloud开发框架 - 已集成uni-id"
+				}
+			},
+			{
+				"path": "uni-id/password/password",
+				"style": {
+					"navigationBarTitleText": "密码"
+				}
+			},
+			{
+				"path": "uni-id/mobile/mobile",
+				"style": {
+					"navigationBarTitleText": "手机号"
+				}
+			},
+			{
+				"path": "uni-id/univerify/univerify",
+				"style": {
+					"navigationBarTitleText": "APP一键登录"
+				}
+			},
+			{
+				"path": "uni-id/weixin/weixin",
+				"style": {
+					"navigationBarTitleText": "微信"
+				}
+			},
+			{
+				"path": "uni-id/weixin/h5-weixin",
+				"style": {
+					"navigationBarTitleText": "微信公众号"
+				}
+			},
+			{
+				"path": "uni-id/weixin/set-user-info",
+				"style": {
+					"navigationBarTitleText": "设置基础信息"
+				}
+			},
+			{
+				"path": "uni-id/alipay/alipay",
+				"style": {
+					"navigationBarTitleText": "支付宝"
+				}
+			},
+			{
+				"path": "uni-id/qq/qq",
+				"style": {
+					"navigationBarTitleText": "QQ"
+				}
+			},
+			{
+				"path": "uni-id/util/util",
+				"style": {
+					"navigationBarTitleText": "其他"
+				}
+			},
+			{
+				"path": "uni-id/email/email",
+				"style": {
+					"navigationBarTitleText": "邮箱"
+				}
+			},
+			{
+				"path": "uni-id/login/index/index",
+				"style": {
+					"navigationBarTitleText": "登录"
+				}
+			},
+			{
+				"path": "uni-id/login/register/register",
+				"style": {
+					"navigationBarTitleText": "注册"
+				}
+			},
+			{
+				"path": "uni-id/login/forget/forget",
+				"style": {
+					"navigationBarTitleText": "找回密码"
+				}
+			},
+			{
+				"path": "vk-vuex/vk-vuex",
+				"style": {
+					"navigationBarTitleText": "vuex演示示例"
+				}
+			},
+			{
+				"path": "openapi/weixin/weixin",
+				"style": {
+					"navigationBarTitleText": "微信开放平台API"
+				}
+			},
+			{
+				"path": "openapi/weixin/msgSecCheck/msgSecCheck",
+				"style": {
+					"navigationBarTitleText": "文本安全检测"
+				}
+			},
+			{
+				"path": "openapi/weixin/imgSecCheck/imgSecCheck",
+				"style": {
+					"navigationBarTitleText": "图片安全检测"
+				}
+			},
+			{
+				"path": "openapi/weixin/sendMessage/sendMessage",
+				"style": {
+					"navigationBarTitleText": "发送订阅消息"
+				}
+			},
+			{
+				"path": "openapi/baidu/baidu",
+				"style": {
+					"navigationBarTitleText": "百度开放平台API"
+				}
+			},
+			{
+				"path": "openapi/qq/qq",
+				"style": {
+					"navigationBarTitleText": "qq开放接口"
+				}
+			},
+			{
+				"path": "openapi/qq/msgSecCheck/msgSecCheck",
+				"style": {}
+			},
+			{
+				"path": "openapi/qq/imgSecCheck/imgSecCheck",
+				"style": {}
+			},
+			{
+				"path": "openapi/douyin/douyin",
+				"style": {
+					"navigationBarTitleText": "抖音开放接口"
+				}
+			},
+			{
+				"path": "openapi/douyin/msgSecCheck/msgSecCheck",
+				"style": {}
+			},
+			{
+				"path": "openapi/douyin/imgSecCheck/imgSecCheck",
+				"style": {}
+			},
+			{
+				"path": "openapi/alipay/alipay",
+				"style": {
+					"navigationBarTitleText": "支付宝开放接口"
+				}
+			},
+			{
+				"path": "uni-id/test/test",
+				"style": {
+					"navigationStyle": "custom", // 隐藏系统导航栏
+					"navigationBarTextStyle": "white" // 状态栏字体为白色，只能为 white-白色，black-黑色 二选一
+				}
+			},
+			{
+				"path": "plugs/lucky-draw/lucky-draw",
+				"style": {
+					"navigationBarTitleText": "抽奖活动小助手"
+				}
+			}
+		]
+	}],
+	"tabBar": {
+		"color": "#7A7E83",
+		"selectedColor": "#1976d2",
+		"borderStyle": "black",
+		"backgroundColor": "#ffffff",
+		"list": [{
+				"pagePath": "pages/index/index",
+				"text": "首页"
+			},
+			{
+				"pagePath": "pages/alert/alert",
+				"text": "预警中心"
+			},
+			{
+				"pagePath": "pages/user/user",
+				"text": "个人中心"
+			}
+		]
+	},
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+		"navigationBarTitleText": "",
+		// #ifndef MP-ALIPAY
+		"navigationBarBackgroundColor": "#F8F8F8",
+		// #endif
+		// #ifdef APP || WEB
+		"rpxCalcMaxDeviceWidth": 750,
+		"rpxCalcBaseDeviceWidth": 375,
+		"rpxCalcIncludeWidth": 750,
+		// #endif
+		"backgroundColor": "#F8F8F8"
+	}
+}
