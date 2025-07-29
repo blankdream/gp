@@ -3,18 +3,18 @@
     <view class="modal">
       <view class="modal-title">添加股票</view>
       <view class="modal-row">
-        <label>股票</label>
+        <view class="modal-label">股票</view>
         <text class="stock-name">{{ stock.name }} <span class="stock-code">{{ stock.code }}</span></text>
       </view>
       <view class="modal-row">
-        <label>分组</label>
+        <view class="modal-label">分组</view>
         <picker :range="groupOptions" :value="selectedGroup" @change="onGroupChange">
           <view class="picker-value">{{ groupOptions[selectedGroup] || '请选择分组' }}</view>
         </picker>
       </view>
       <view class="modal-row">
-        <label>备注</label>
-        <textarea v-model="remark" placeholder="可填写备注" rows="3" />
+        <view class="modal-label">备注</view>
+        <textarea class="modal-textarea" v-model="remark" placeholder="可填写备注" rows="3" />
       </view>
       <view class="modal-actions">
         <button class="add-btn" @click="onAdd">添加</button>
@@ -96,7 +96,7 @@ export default {
   gap: 10px;
   margin-bottom: 14px;
 }
-label {
+.modal-label {
   min-width: 48px;
   color: #555;
 }
@@ -115,7 +115,7 @@ label {
   min-width: 80px;
   background: #fafbfc;
 }
-textarea {
+.modal-textarea {
   flex: 1;
   border: 1px solid #ddd;
   border-radius: 6px;

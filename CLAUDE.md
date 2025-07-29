@@ -6,6 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a **股票池 (Stock Pool)** application - a uni-app cross-platform stock management system built with the **vk-unicloud-router** framework. The app allows users to create and manage personal stock portfolios with real-time quotes, custom grouping, and price alert functionality. It supports H5, mini-programs (WeChat, Alipay, Baidu, QQ, TikTok), and mobile apps using a cloud function router architecture.
 
+**Key Application Features:**
+- Personal stock portfolio management with drag & drop sorting
+- Real-time stock quotes from Tencent Finance API (qt.gtimg.cn)
+- Custom stock grouping and categories
+- Price alert system with notifications
+- Multi-platform deployment (H5, mini-programs, mobile apps)
+- Built-in user authentication and management
+
 ## Key Technologies
 
 - **Framework**: uni-app with Vue 3.0 support

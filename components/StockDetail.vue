@@ -214,11 +214,14 @@ export default {
 }
 
 .kline-section {
+  margin: 32rpx 0 0 0; /* 移除负边距，因为K线图现在会自动填充可用宽度 */
+  
   .section-title {
     font-size: 30rpx;
     font-weight: bold;
     color: #333;
     margin-bottom: 16rpx;
+    padding: 0 24rpx; /* 恢复正常内边距 */
   }
 }
 </style>

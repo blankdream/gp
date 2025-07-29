@@ -146,6 +146,9 @@ export default {
       return
     }
     
+    // 强制清除Vue组件缓存，确保代码更新生效
+    this.$forceUpdate()
+    
     // 确保组件挂载后加载数据
     this.$nextTick(() => {
       this.initChart()
@@ -156,6 +159,11 @@ export default {
         }
       }, 200)
     })
+    
+    // 添加调试信息
+    console.log('K线图组件已挂载，股票代码:', this.stockCode)
+    console.log('屏幕宽度:', uni.getSystemInfoSync().screenWidth)
+    console.log('组件版本: KLineChart_v2.4_LabelsShiftedRight - ', new Date().toISOString())
   },
   beforeDestroy() {
     this.stopMinuteRefresh()
@@ -398,15 +406,29 @@ export default {
       const systemInfo = uni.getSystemInfoSync()
       const screenWidth = systemInfo.screenWidth || 375
       
+      console.log('=== K线图初始化调试信息 ===')
+      console.log('系统信息:', systemInfo)
+      console.log('屏幕宽度:', screenWidth)
+      console.log('当前时间戳:', Date.now()) // 添加时间戳确认代码更新
+      
       // 立即标记为初始化中，防止重复调用
       this.chartInitialized = true
       
-      // 直接使用固定尺寸，避免boundingClientRect的无限循环问题
-      const width = screenWidth - 32
+      // 使用完整屏幕宽度，预留价格标签显示空间
+      const width = screenWidth - 8  // 预留8px空间确保价格标签不被遮挡
       const height = this.calculateOptimalHeight()
+      
+      console.log('计算的画布尺寸:', { width, height })
+      console.log('VERSION_CHECK: KLineChart_v2.4_LabelsShiftedRight') // 版本标识，左侧标签再向右移动10px
       
       this.canvasWidth = width
       this.canvasHeight = height
+      
+      console.log('设置后的画布尺寸:', { 
+        canvasWidth: this.canvasWidth, 
+        canvasHeight: this.canvasHeight 
+      })
+      console.log('=== 调试信息结束 ===')
       
       // 清除之前的定时器，防止重复执行
       if (this.initChartTimeout) {
@@ -674,6 +696,11 @@ export default {
     // 绘制图表
     async drawChart() {
       if (this.isDrawing || !this.klineData.length || !this.canvasWidth) {
+        console.log('绘制条件不满足:', {
+          isDrawing: this.isDrawing,
+          dataLength: this.klineData.length,
+          canvasWidth: this.canvasWidth
+        })
         return
       }
       
@@ -690,9 +717,17 @@ export default {
         
         ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight)
         
-        const leftPadding = 60
-        const rightPadding = 10
+        const leftPadding = 60  // 进一步增加左边距为价格标签预留更多空间
+        const rightPadding = 50  // 右边距保持不变
         const topPadding = 20
+        
+        console.log('=== 绘制参数调试 v2.4_LabelsShiftedRight ===')
+        console.log('画布尺寸:', { width: this.canvasWidth, height: this.canvasHeight })
+        console.log('边距设置:', { leftPadding, rightPadding, topPadding })
+        console.log('图表可用宽度:', this.canvasWidth - leftPadding - rightPadding)
+        console.log('左侧标签位置: leftPadding + 15 = ', leftPadding + 15)
+        console.log('当前时间:', new Date().toLocaleTimeString()) // 确认实时更新
+        console.log('=== 调试结束 ===')
         
         let bottomPadding = 40
         let volumeChartHeight = 0
@@ -1046,15 +1081,15 @@ export default {
       
       // 绘制成交量标签（在左侧显示最大成交量）
       ctx.fillStyle = '#666666'
-      ctx.font = '9px sans-serif'
+      ctx.font = '11px sans-serif'  // 从9px增加为11px，提高清晰度
       ctx.textAlign = 'right'
       
-      // 显示最大成交量
+      // 显示最大成交量 - 也向右移动10px保持对齐
       const maxVolumeStr = this.formatVolumeShort(maxVolume)
-      ctx.fillText(maxVolumeStr, leftPadding - 5, topPadding + 12)
+      ctx.fillText(maxVolumeStr, leftPadding + 15, topPadding + 12)  // 从+5改为+15
       
       // 显示0
-      ctx.fillText('0', leftPadding - 5, topPadding + height - 2)
+      ctx.fillText('0', leftPadding + 15, topPadding + height - 2)  // 从+5改为+15
     },
     
     // 格式化成交量显示（简短版本）
@@ -1075,7 +1110,7 @@ export default {
       if (!data || data.length === 0) return
       
       ctx.fillStyle = '#666'
-      ctx.font = '10px sans-serif'
+      ctx.font = '12px sans-serif'  // 从10px增加为12px，提高清晰度
       ctx.textAlign = 'center'
       
       const barWidth = width / data.length
@@ -1129,7 +1164,7 @@ export default {
       if (!data || data.length === 0) return
       
       ctx.fillStyle = '#666'
-      ctx.font = '10px sans-serif'
+      ctx.font = '12px sans-serif'  // 从10px增加为12px，提高清晰度
       
       // 分时图使用固定的时间标签
       if (this.currentPeriod === 'minute') {
@@ -1261,7 +1296,7 @@ export default {
     // 绘制价格标签
     drawPriceLabels(ctx, leftPadding, topPadding, height, minPrice, maxPrice) {
       ctx.fillStyle = '#666666'
-      ctx.font = '10px sans-serif'
+      ctx.font = '11px sans-serif'  // 字体大小从10px增加到11px，提高清晰度
       ctx.textAlign = 'right'
       
       // 绘制左侧价格标签
@@ -1269,12 +1304,11 @@ export default {
         const price = minPrice + (maxPrice - minPrice) * (1 - i / 4)
         const y = topPadding + (height / 4) * i
         
-        // 在左侧显示价格，确保不与时间标签重叠
-        // 最下面的价格标签稍微向上移动，避免与时间轴重叠
+        // 价格标签再向右移动10px，确保完全可见
         if (i === 4) {
-          ctx.fillText(price.toFixed(2), leftPadding - 5, y - 8)
+          ctx.fillText(price.toFixed(2), leftPadding + 15, y - 8)  // 从+5改为+15
         } else {
-          ctx.fillText(price.toFixed(2), leftPadding - 5, y + 3)
+          ctx.fillText(price.toFixed(2), leftPadding + 15, y + 3)   // 从+5改为+15
         }
       }
       
@@ -1297,10 +1331,10 @@ export default {
               ctx.fillStyle = '#666666' // 平盘显示灰色
             }
             
-            // 显示涨跌幅百分比
+            // 显示涨跌幅百分比 - 在右侧预留的空间内显示
             const changeText = change > 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`
-            // 在右侧绘制，使用canvas宽度减去右边距
-            ctx.fillText(changeText, this.canvasWidth - 40, y + 3)
+            // 现在有足够的右边距空间显示涨跌幅标签
+            ctx.fillText(changeText, this.canvasWidth - 45, y + 3)
           }
         }
       }
@@ -1392,8 +1426,8 @@ export default {
       }
       
       // 计算图表区域
-      const leftPadding = 60
-      const rightPadding = 10
+      const leftPadding = 60  // 进一步增加左边距为价格标签预留更多空间
+      const rightPadding = 50  // 右边距保持不变
       const topPadding = 20
       const chartWidth = this.canvasWidth - leftPadding - rightPadding
       let bottomPadding = 40
@@ -1471,7 +1505,7 @@ export default {
     updateCrosshairY() {
       if (!this.crosshairData) return
       
-      const leftPadding = 60
+      const leftPadding = 60  // 进一步增加左边距为价格标签预留更多空间
       const topPadding = 20
       let bottomPadding = 40
       if (this.currentPeriod !== 'minute') {
@@ -1537,8 +1571,8 @@ export default {
         
         ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight)
         
-        const leftPadding = 60
-        const rightPadding = 10
+        const leftPadding = 15  // 大幅减少左边距，从30减少到15
+        const rightPadding = 5   // 优化右边距，增加图表宽度
         const topPadding = 20
         
         let bottomPadding = 40
@@ -1647,7 +1681,7 @@ export default {
             ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
             ctx.fillRect(5, this.crosshairY - 10, 50, 20)
             ctx.fillStyle = '#ffffff'
-            ctx.font = '10px sans-serif'
+            ctx.font = '12px sans-serif'  // 从10px增加为12px，提高清晰度
             ctx.textAlign = 'center'
             ctx.fillText(priceText, 30, this.crosshairY + 3)
             
@@ -1686,8 +1720,8 @@ export default {
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight)
         
-        const leftPadding = 60
-        const rightPadding = 10
+        const leftPadding = 15  // 大幅减少左边距，从30减少到15
+        const rightPadding = 5   // 优化右边距，增加图表宽度
         const topPadding = 20
         
         let bottomPadding = 40
@@ -1815,7 +1849,7 @@ export default {
       ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
       ctx.fillRect(5, this.crosshairY - 10, 50, 20)
       ctx.fillStyle = '#ffffff'
-      ctx.font = '10px sans-serif'
+      ctx.font = '12px sans-serif'  // 从10px增加为12px，提高清晰度
       ctx.textAlign = 'center'
       ctx.fillText(priceText, 30, this.crosshairY + 3)
       
@@ -1913,8 +1947,8 @@ export default {
       ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight)
       
       // 计算绘制参数
-      const leftPadding = 60
-      const rightPadding = 10
+      const leftPadding = 60  // 进一步增加左边距为价格标签预留更多空间
+      const rightPadding = 50  // 右边距保持不变
       const topPadding = 20
       
       // 动态计算底部空间
@@ -2032,7 +2066,7 @@ export default {
           ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
           ctx.fillRect(5, this.crosshairY - 10, 50, 20)
           ctx.fillStyle = '#ffffff'
-          ctx.font = '10px sans-serif'
+          ctx.font = '12px sans-serif'  // 从10px增加为12px，提高清晰度
           ctx.textAlign = 'center'
           ctx.fillText(priceText, 30, this.crosshairY + 3)
           
@@ -2067,8 +2101,8 @@ export default {
       
       // 直接使用 Canvas 2D API
       
-      const leftPadding = 60
-      const rightPadding = 10
+      const leftPadding = 60  // 进一步增加左边距为价格标签预留更多空间
+      const rightPadding = 50  // 右边距保持不变
       const topPadding = 20
       const chartWidth = this.canvasWidth - leftPadding - rightPadding
       let bottomPadding = 60
@@ -2127,7 +2161,7 @@ export default {
       ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
       ctx.fillRect(5, this.crosshairY - 10, 50, 20)
       ctx.fillStyle = '#ffffff'
-      ctx.font = '10px sans-serif'
+      ctx.font = '12px sans-serif'  // 从10px增加为12px，提高清晰度
       ctx.textAlign = 'center'
       ctx.fillText(priceText, 30, this.crosshairY + 3)
       
@@ -2212,8 +2246,8 @@ export default {
     
     // 检查点击位置是否在可交互的图表区域内
     isPointInChartArea(x, y) {
-      const leftPadding = 60
-      const rightPadding = 10
+      const leftPadding = 60  // 进一步增加左边距为价格标签预留更多空间
+      const rightPadding = 50  // 右边距保持不变
       const topPadding = 20
       const chartWidth = this.canvasWidth - leftPadding - rightPadding
       let bottomPadding = 40
@@ -2402,6 +2436,8 @@ export default {
   border-radius: 12rpx;
   overflow: visible; /* 改为visible确保Canvas可见 */
   width: 100%;
+  padding: 0; /* 移除内边距，让图表更充分利用空间 */
+  margin: 0; /* 确保没有外边距 */
   /* 移除可能影响同层渲染的CSS属性 */
 }
 
@@ -2435,6 +2471,7 @@ export default {
   min-height: 200px;
   border: 1px solid #e0e0e0;
   overflow: visible;
+  margin: 0; /* 移除外边距 */
   
   .chart-canvas {
     width: 100%;
@@ -2447,6 +2484,7 @@ export default {
     backface-visibility: visible;
     touch-action: auto;
     pointer-events: auto;
+    margin: 0; /* 移除画布边距 */
   }
 }
 
@@ -2502,14 +2540,15 @@ export default {
   top: -2px;
   left: 0;
   right: 0;
-  width: calc(100% - 120px); /* 增加左边距避免与Y轴重叠 */
-  background: rgba(255, 255, 255, 0.9); /* 半透明白色背景 */
-  border-radius: 4px;
-  padding: 0px 15px;
+  width: calc(100% - 40px); /* 适应极小左边距15px */
+  background: rgba(255, 255, 255, 0.95); /* 提高透明度 */
+  border: 1px solid rgba(0, 0, 0, 0.08); /* 更淡的边框 */
+  border-radius: 6px; /* 增加圆角 */
+  padding: 8px 15px; /* 增加内边距 */
   z-index: 10;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); /* 添加阴影效果 */
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08); /* 更柔和的阴影 */
   margin: 5px auto; /* 居中显示 */
-  margin-left: 80px; /* 与Y轴宽度一致，避免重叠 */
+  margin-left: 20px; /* 适应新的极小左边距15px */
   
   .info-content {
     display: flex;
@@ -2518,9 +2557,9 @@ export default {
     justify-content: center; /* 内容居中显示 */
     
     .info-item {
-      font-size: 12px; /* 调小字体大小 */
+      font-size: 13px; /* 从12px增加为13px，提高可读性 */
       color: #333333;
-      margin-right: 10px; /* 减小间距 */
+      margin-right: 12px; /* 适当增加间距 */
       white-space: nowrap;
       font-weight: 500;
       
@@ -2530,10 +2569,12 @@ export default {
       
       &.price-up {
         color: #ff4949; /* 红色表示上涨 */
+        font-weight: 600; /* 加粗涨跌数据 */
       }
       
       &.price-down {
         color: #66cc66; /* 绿色表示下跌 */
+        font-weight: 600; /* 加粗涨跌数据 */
       }
     }
   }
