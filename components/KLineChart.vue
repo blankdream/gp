@@ -962,8 +962,8 @@ export default {
         } else {
           this.drawKlines(ctx, visibleData, leftPadding, topPadding, chartWidth, mainChartHeight, minPrice, maxPrice)
           this.drawSeparatorLine(ctx, leftPadding, topPadding + mainChartHeight + 10, chartWidth)
-          // 在K线和成交量之间绘制日期标签
-          this.drawKlineDateLabels(ctx, visibleData, leftPadding, topPadding + mainChartHeight + 30, chartWidth)
+          // 在K线和成交量之间绘制日期标签，上移5px避免遮挡成交量图
+          this.drawKlineDateLabels(ctx, visibleData, leftPadding, topPadding + mainChartHeight + 25, chartWidth)
           this.drawVolumeChart(ctx, visibleData, leftPadding, volumeChartTop, chartWidth, volumeChartHeight)
         }
         
@@ -979,24 +979,62 @@ export default {
     
     // 绘制网格
     drawGrid(ctx, leftPadding, topPadding, width, height, minPrice, maxPrice) {
-      ctx.strokeStyle = 'rgba(224, 224, 224, 0.5)'
-      ctx.lineWidth = 0.5
+      ctx.strokeStyle = 'rgba(160, 160, 160, 0.3)'  // 减少透明度，提高网格线可见性
+      ctx.lineWidth = 0.8  // 增加线条粗细，确保清晰可见
       
-      for (let i = 0; i <= 4; i++) {
-        const y = topPadding + (height / 4) * i
+      // 绘制水平网格线（价格线）- 与价格标签精确对应，9条线
+      for (let i = 0; i <= 8; i++) {
+        const y = topPadding + (height / 8) * i  // 与价格标签位置完全对应
+        
+        // 为了确保可见性，对中间的几条线使用稍微粗一点的线条
+        if (i >= 1 && i <= 7) {
+          ctx.lineWidth = 1.0  // 中间线条稍粗
+        } else {
+          ctx.lineWidth = 0.8  // 边界线条
+        }
+        
         ctx.beginPath()
         ctx.moveTo(leftPadding, y)
         ctx.lineTo(leftPadding + width, y)
         ctx.stroke()
       }
       
-      for (let i = 0; i <= 3; i++) {
-        const x = leftPadding + (width / 3) * i
-        ctx.beginPath()
-        ctx.moveTo(x, topPadding)
-        ctx.lineTo(x, topPadding + height)
-        ctx.stroke()
-      }
+      // 绘制垂直网格线（时间线）- 与日期标签对应
+      // 只在左、中、右三个位置绘制垂直线，对应3个日期标签
+      const marginLR = 20
+      const labelWidth = width - (marginLR * 2)
+      
+      // 左边网格线 - 对应左边日期标签
+      const leftX = leftPadding + marginLR
+      ctx.beginPath()
+      ctx.moveTo(leftX, topPadding)
+      ctx.lineTo(leftX, topPadding + height)
+      ctx.stroke()
+      
+      // 中间网格线 - 对应中间日期标签
+      const middleX = leftPadding + width / 2
+      ctx.beginPath()
+      ctx.moveTo(middleX, topPadding)
+      ctx.lineTo(middleX, topPadding + height)
+      ctx.stroke()
+      
+      // 右边网格线 - 对应右边日期标签
+      const rightX = leftPadding + marginLR + labelWidth
+      ctx.beginPath()
+      ctx.moveTo(rightX, topPadding)
+      ctx.lineTo(rightX, topPadding + height)
+      ctx.stroke()
+      
+      // 添加边界网格线
+      ctx.beginPath()
+      ctx.moveTo(leftPadding, topPadding)
+      ctx.lineTo(leftPadding, topPadding + height)
+      ctx.stroke()
+      
+      ctx.beginPath()
+      ctx.moveTo(leftPadding + width, topPadding)
+      ctx.lineTo(leftPadding + width, topPadding + height)
+      ctx.stroke()
     },
     
     // 绘制分割线
@@ -1527,16 +1565,16 @@ export default {
       ctx.font = '11px sans-serif'  // 字体大小从10px增加到11px，提高清晰度
       ctx.textAlign = 'right'
       
-      // 绘制左侧价格标签
-      for (let i = 0; i <= 4; i++) {
-        const price = minPrice + (maxPrice - minPrice) * (1 - i / 4)
-        const y = topPadding + (height / 4) * i
+      // 绘制左侧价格标签 - 保持适中数量(9个)，不需要匹配所有网格线
+      for (let i = 0; i <= 8; i++) {
+        const price = minPrice + (maxPrice - minPrice) * (1 - i / 8)
+        const y = topPadding + (height / 8) * i
         
-        // 价格标签再向右移动10px，确保完全可见
-        if (i === 4) {
-          ctx.fillText(price.toFixed(2), leftPadding + 15, y - 8)  // 从+5改为+15
+        // 价格标签向右移动，确保完全可见
+        if (i === 8) {
+          ctx.fillText(price.toFixed(2), leftPadding + 15, y - 8)  // 最底部标签上移一点
         } else {
-          ctx.fillText(price.toFixed(2), leftPadding + 15, y + 3)   // 从+5改为+15
+          ctx.fillText(price.toFixed(2), leftPadding + 15, y + 3)
         }
       }
       
@@ -1545,9 +1583,9 @@ export default {
         const yesterdayClose = this.klineData[0].price || 0
         if (yesterdayClose) {
           ctx.textAlign = 'left'
-          for (let i = 0; i <= 4; i++) {
-            const price = minPrice + (maxPrice - minPrice) * (1 - i / 4)
-            const y = topPadding + (height / 4) * i
+          for (let i = 0; i <= 8; i++) {
+            const price = minPrice + (maxPrice - minPrice) * (1 - i / 8)
+            const y = topPadding + (height / 8) * i
             const change = ((price - yesterdayClose) / yesterdayClose) * 100
             
             // 根据涨跌情况设置颜色
@@ -1561,8 +1599,10 @@ export default {
             
             // 显示涨跌幅百分比 - 在右侧预留的空间内显示
             const changeText = change > 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`
-            // 现在有足够的右边距空间显示涨跌幅标签
             ctx.fillText(changeText, this.canvasWidth - 45, y + 3)
+            
+            // 重置颜色为默认值
+            ctx.fillStyle = '#666666'
           }
         }
       }
@@ -1939,8 +1979,8 @@ export default {
         } else {
           this.drawKlines(ctx, visibleData, leftPadding, topPadding, chartWidth, mainChartHeight, minPrice, maxPrice)
           this.drawSeparatorLine(ctx, leftPadding, topPadding + mainChartHeight + 10, chartWidth)
-          // 在K线和成交量之间绘制日期标签
-          this.drawKlineDateLabels(ctx, visibleData, leftPadding, topPadding + mainChartHeight + 30, chartWidth)
+          // 在K线和成交量之间绘制日期标签，上移5px避免遮挡成交量图
+          this.drawKlineDateLabels(ctx, visibleData, leftPadding, topPadding + mainChartHeight + 25, chartWidth)
           this.drawVolumeChart(ctx, visibleData, leftPadding, volumeChartTop, chartWidth, volumeChartHeight)
         }
         
@@ -2090,8 +2130,8 @@ export default {
         } else {
           this.drawKlines(ctx, visibleData, leftPadding, topPadding, chartWidth, mainChartHeight, minPrice, maxPrice)
           this.drawSeparatorLine(ctx, leftPadding, topPadding + mainChartHeight + 10, chartWidth)
-          // 在K线和成交量之间绘制日期标签
-          this.drawKlineDateLabels(ctx, visibleData, leftPadding, topPadding + mainChartHeight + 30, chartWidth)
+          // 在K线和成交量之间绘制日期标签，上移5px避免遮挡成交量图
+          this.drawKlineDateLabels(ctx, visibleData, leftPadding, topPadding + mainChartHeight + 25, chartWidth)
           this.drawVolumeChart(ctx, visibleData, leftPadding, volumeChartTop, chartWidth, volumeChartHeight)
         }
         
