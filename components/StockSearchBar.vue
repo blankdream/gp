@@ -61,7 +61,7 @@ export default {
       if (!this.keyword.trim()) return
       
       try {
-        console.log('开始搜索股票:', this.keyword.trim())
+        // 开始搜索股票
         
         // 直接调用腾讯财经搜索API
         const res = await uni.request({
@@ -69,20 +69,16 @@ export default {
           method: 'GET'
         })
         
-        console.log('API原始返回:', res.data)
+        // API原始返回数据已接收
         
         if (res.statusCode === 200 && res.data) {
           const results = this.parseSearchResult(res.data)
-          console.log('解析后结果:', results)
+          // 解析后结果已获取
           
           this.searchResults = results.slice(0, 10) // 最多显示10个结果
           this.showDropdown = this.searchResults.length > 0
           
-          console.log('设置下拉状态:', {
-            searchResults: this.searchResults,
-            showDropdown: this.showDropdown,
-            resultsLength: this.searchResults.length
-          })
+          // 设置下拉状态
         } else {
           this.searchResults = []
           this.showDropdown = false
@@ -97,27 +93,26 @@ export default {
     // 解析搜索结果 - 按照新的解析规则
     parseSearchResult(data) {
       if (!data || typeof data !== 'string') {
-        console.log('数据为空或非字符串:', data)
+        // 数据为空或非字符串
         return []
       }
       
       try {
-        console.log('开始解析数据，数据长度:', data.length)
-        console.log('数据前200字符:', data.substring(0, 200))
+        // 开始解析数据
         
         // 第一步：截取双引号里面的内容
         const quotesMatch = data.match(/"([^"]+)"/);
         if (!quotesMatch) {
-          console.log('未找到双引号内容')
+          // 未找到双引号内容
           return []
         }
         
         const quotedContent = quotesMatch[1]
-        console.log('双引号内容:', quotedContent)
+        // 双引号内容已提取
         
         // 第二步：用-进行字符串分割，得到每个股票的数据字符串
         const stockDataList = quotedContent.split('^')
-        console.log('按-分割后的股票数据:', stockDataList)
+        // 按-分割后的股票数据已获取
         
         const stocks = []
         
@@ -125,10 +120,10 @@ export default {
         stockDataList.forEach((stockDataStr, index) => {
           if (!stockDataStr.trim()) return
           
-          console.log(`处理第${index + 1}个股票数据:`, stockDataStr)
+          // 处理股票数据
           
           const fields = stockDataStr.split('~')
-          console.log('字段分割结果:', fields)
+          // 字段分割结果已获取
           
           if (fields.length >= 3) {
             const marketCode = fields[0]      // 第一个字段：市场代码 (sz/sh/hk/us)
@@ -153,12 +148,12 @@ export default {
                 market: marketName
               })
               
-              console.log(`解析完成: ${stockName} (${fullcode}) [${marketName}]`)
+              // 解析完成
             }
           }
         })
         
-        console.log('最终解析结果:', stocks)
+        // 最终解析结果已获取
         return stocks
         
       } catch (error) {

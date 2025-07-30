@@ -196,7 +196,7 @@ export default {
     try {
       const cleanupResult = StorageManager.checkAndCleanup(75); // 超过75%使用率时清理
       if (cleanupResult.cleanedCount > 0) {
-        console.log('自动清理了存储空间，释放了', cleanupResult.cleanedCount, '个缓存项');
+        // 清理了存储空间
       }
     } catch (error) {
       console.warn('存储检查失败:', error);
@@ -276,12 +276,12 @@ export default {
           const cachedGroups = CacheManager.get(cacheKey)
           if (cachedGroups) {
             this.groups = cachedGroups
-            console.log('从缓存加载分组列表')
+            // 从缓存加载分组列表
             return
           }
         }
         
-        console.log('从服务器加载分组列表')
+        // 从服务器加载分组列表
         const res = await this.vk.callFunction({
           url: 'stock/kh/group',
           data: { action: 'list' }
@@ -315,12 +315,12 @@ export default {
           const cachedStocks = CacheManager.get(cacheKey)
           if (cachedStocks) {
             this.stockList = cachedStocks
-            console.log(`从缓存加载股票列表: ${this.currentGroupName || '全部'}`)
+            // 从缓存加载股票列表
             return
           }
         }
         
-        console.log(`从服务器加载股票列表: ${this.currentGroupName || '全部'}`)
+        // 从服务器加载股票列表
         const res = await this.vk.callFunction({
           url: 'stock/kh/pool',
           data: {
@@ -393,7 +393,7 @@ export default {
           
           // 如果所有股票市场都已收市，停止自动刷新
           if (allMarketsClosed) {
-            console.log('所有市场已收市，停止自动刷新')
+            // 所有市场已收市，停止自动刷新
             this.stopAutoRefresh()
           }
         }
@@ -847,7 +847,7 @@ export default {
         const result = StorageManager.cleanupStorage();
         if (result.success) {
           this.vk.toast(`清理完成，释放了${result.cleanedCount}个缓存项`);
-          console.log('存储清理结果:', result);
+          // 存储清理结果已记录
         } else {
           this.vk.toast('清理失败: ' + result.error);
         }
@@ -862,8 +862,7 @@ export default {
       try {
         const info = StorageManager.getStorageInfo();
         const details = StorageManager.getStorageDetails();
-        console.log('存储状态:', info);
-        console.log('存储详情:', details);
+        // 存储状态和详情已检查
         this.vk.toast(`存储使用率: ${info.usage}%`);
       } catch (error) {
         console.error('检查存储状态失败:', error);

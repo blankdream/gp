@@ -161,9 +161,7 @@ export default {
     })
     
     // 添加调试信息
-    console.log('K线图组件已挂载，股票代码:', this.stockCode)
-    console.log('屏幕宽度:', uni.getSystemInfoSync().screenWidth)
-    console.log('组件版本: KLineChart_v2.4_LabelsShiftedRight - ', new Date().toISOString())
+    // K线图组件已挂载
   },
   beforeDestroy() {
     this.stopMinuteRefresh()
@@ -406,10 +404,7 @@ export default {
       const systemInfo = uni.getSystemInfoSync()
       const screenWidth = systemInfo.screenWidth || 375
       
-      console.log('=== K线图初始化调试信息 ===')
-      console.log('系统信息:', systemInfo)
-      console.log('屏幕宽度:', screenWidth)
-      console.log('当前时间戳:', Date.now()) // 添加时间戳确认代码更新
+      // K线图初始化调试信息
       
       // 立即标记为初始化中，防止重复调用
       this.chartInitialized = true
@@ -418,17 +413,12 @@ export default {
       const width = screenWidth - 8  // 预留8px空间确保价格标签不被遮挡
       const height = this.calculateOptimalHeight()
       
-      console.log('计算的画布尺寸:', { width, height })
-      console.log('VERSION_CHECK: KLineChart_v2.4_LabelsShiftedRight') // 版本标识，左侧标签再向右移动10px
+      // 计算的画布尺寸
       
       this.canvasWidth = width
       this.canvasHeight = height
       
-      console.log('设置后的画布尺寸:', { 
-        canvasWidth: this.canvasWidth, 
-        canvasHeight: this.canvasHeight 
-      })
-      console.log('=== 调试信息结束 ===')
+      // 设置后的画布尺寸
       
       // 清除之前的定时器，防止重复执行
       if (this.initChartTimeout) {
@@ -570,8 +560,7 @@ export default {
         return false
       }
       
-      console.log('验证K线数据，数据长度:', this.klineData.length)
-      console.log('前3条数据:', this.klineData.slice(0, 3))
+      // 验证K线数据
       
       for (let i = 0; i < Math.min(3, this.klineData.length); i++) {
         const item = this.klineData[i]
@@ -609,7 +598,7 @@ export default {
         }
       }
       
-      console.log('K线数据验证通过')
+      // K线数据验证通过
       return true
     },
     
@@ -696,11 +685,7 @@ export default {
     // 绘制图表
     async drawChart() {
       if (this.isDrawing || !this.klineData.length || !this.canvasWidth) {
-        console.log('绘制条件不满足:', {
-          isDrawing: this.isDrawing,
-          dataLength: this.klineData.length,
-          canvasWidth: this.canvasWidth
-        })
+        // 绘制条件不满足
         return
       }
       
@@ -721,13 +706,7 @@ export default {
         const rightPadding = 50  // 右边距保持不变
         const topPadding = 20
         
-        console.log('=== 绘制参数调试 v2.4_LabelsShiftedRight ===')
-        console.log('画布尺寸:', { width: this.canvasWidth, height: this.canvasHeight })
-        console.log('边距设置:', { leftPadding, rightPadding, topPadding })
-        console.log('图表可用宽度:', this.canvasWidth - leftPadding - rightPadding)
-        console.log('左侧标签位置: leftPadding + 15 = ', leftPadding + 15)
-        console.log('当前时间:', new Date().toLocaleTimeString()) // 确认实时更新
-        console.log('=== 调试结束 ===')
+        // 绘制参数调试
         
         let bottomPadding = 40
         let volumeChartHeight = 0

@@ -291,13 +291,13 @@ class ErrorHandler {
         errorMsg.includes('maximum size') ||
         errorMsg.includes('exceed')) {
       
-      console.log('检测到存储空间超限，尝试自动清理...')
+      // 检测到存储空间超限，尝试自动清理
       
       // 尝试自动清理存储
       try {
         const cleanupResult = StorageManager.emergencyCleanup()
         if (cleanupResult.success) {
-          console.log('存储清理成功，释放了', cleanupResult.cleanedCount, '个存储项')
+          // 存储清理成功
           return '存储空间不足，已自动清理，请重新操作'
         } else {
           return '存储空间不足，清理失败，请手动清理应用数据'
@@ -339,7 +339,7 @@ class ErrorHandler {
       // 开发环境下显示存储状态
       try {
         const storageInfo = StorageManager.getStorageInfo()
-        console.log('当前存储状态:', storageInfo)
+        // 当前存储状态已检查
       } catch (e) {
         console.error('获取存储状态失败:', e)
       }

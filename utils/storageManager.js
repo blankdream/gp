@@ -43,7 +43,7 @@ class StorageManager {
   cleanupStorage() {
     try {
       const info = this.getStorageInfo();
-      console.log('清理前存储使用情况:', info);
+      // 清理前存储使用情况已检查
       
       let cleanedCount = 0;
       
@@ -54,7 +54,7 @@ class StorageManager {
           try {
             uni.removeStorageSync(key);
             cleanedCount++;
-            console.log('已清理存储键:', key);
+            // 已清理存储键
           } catch (error) {
             console.warn('清理存储键失败:', key, error);
           }
@@ -65,8 +65,7 @@ class StorageManager {
       this.cleanupLifeData();
       
       const afterInfo = this.getStorageInfo();
-      console.log('清理后存储使用情况:', afterInfo);
-      console.log(`存储清理完成，清理了 ${cleanedCount} 个缓存项`);
+      // 存储清理完成
       
       return {
         success: true,
@@ -104,13 +103,13 @@ class StorageManager {
           cleanedLifeData[key] = lifeData[key];
         } else {
           hasChanges = true;
-          console.log('从lifeData中清理:', key);
+          // 从lifeData中清理
         }
       });
 
       if (hasChanges) {
         uni.setStorageSync('lifeData', cleanedLifeData);
-        console.log('lifeData清理完成');
+        // lifeData清理完成
       }
     } catch (error) {
       console.error('清理lifeData失败:', error);
@@ -124,10 +123,10 @@ class StorageManager {
     const info = this.getStorageInfo();
     const usage = parseFloat(info.usage);
     
-    console.log(`当前存储使用率: ${usage}%`);
+    // 存储使用率已检查
     
     if (usage > threshold) {
-      console.log(`存储使用率超过${threshold}%，开始自动清理`);
+      // 存储使用率超限，开始自动清理
       return this.cleanupStorage();
     }
     
@@ -142,7 +141,7 @@ class StorageManager {
    */
   emergencyCleanup() {
     try {
-      console.log('开始紧急清理存储...');
+      // 开始紧急清理存储
       
       const info = this.getStorageInfo();
       const preserveKeys = ['lifeData', 'uni_id_token', 'uni_id_token_expired'];
@@ -163,7 +162,7 @@ class StorageManager {
       // 清理lifeData，只保留用户信息
       this.emergencyCleanupLifeData();
       
-      console.log(`紧急清理完成，清理了 ${cleanedCount} 个存储项`);
+      // 紧急清理完成
       
       const afterInfo = this.getStorageInfo();
       return {
@@ -200,7 +199,7 @@ class StorageManager {
       }
 
       uni.setStorageSync('lifeData', essentialData);
-      console.log('lifeData紧急清理完成，只保留用户信息');
+      // lifeData紧急清理完成
     } catch (error) {
       console.error('lifeData紧急清理失败:', error);
     }

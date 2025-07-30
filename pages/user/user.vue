@@ -106,17 +106,15 @@ export default {
         const userInfo = this.vk.getVuex('$user.userInfo')
         const token = this.vk.getVuex('$user.token')
         
-        console.log('loadUserInfo - userInfo:', userInfo)
-        console.log('loadUserInfo - token:', token)
-        console.log('loadUserInfo - userInfo.uid:', userInfo?.uid)
+        // 用户信息加载完成
         
         // 检查用户信息是否存在 - 用_id而不是uid
         if (userInfo && (userInfo.uid || userInfo._id)) {
           this.userInfo = userInfo
-          console.log('用户已登录，设置userInfo:', this.userInfo)
+          // 用户已登录
         } else {
           this.userInfo = null
-          console.log('用户未登录，清空userInfo')
+          // 用户未登录
         }
       } catch (err) {
         console.error('加载用户信息失败:', err)

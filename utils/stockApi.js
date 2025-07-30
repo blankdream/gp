@@ -171,11 +171,7 @@ class StockApi {
       const dateTimeString = `${year}/${month}/${day} ${hour}:${minute}:${second}`
       const testDate = this.createSafeDate(dateTimeString)
       
-      console.log('日期兼容性测试:')
-      console.log('原始字符串:', testTimeStr)
-      console.log('转换后格式:', dateTimeString)
-      console.log('解析结果:', testDate)
-      console.log('是否有效:', !isNaN(testDate.getTime()))
+      // 日期兼容性测试完成
       
       return !isNaN(testDate.getTime())
     } catch (error) {
@@ -247,7 +243,7 @@ class StockApi {
       const paddedSecond = second.padStart(2, '0')
       
       const dateTimeString = `${year}/${paddedMonth}/${paddedDay} ${paddedHour}:${paddedMinute}:${paddedSecond}`
-      console.log('构建的日期字符串:', dateTimeString)
+      // 日期字符串构建完成
       
       const updateTime = this.createSafeDate(dateTimeString)
       
@@ -302,7 +298,7 @@ class StockApi {
     if (!code) return []
     
     try {
-      console.log('获取K线数据:', { code, period, count })
+      // K线数据获取开始
       
       // 处理美股代码 - us前缀保持小写，股票代码变大写
       let processedCode = code
@@ -316,11 +312,11 @@ class StockApi {
         processedCode = 'us' + cleanCode.toUpperCase()
       }
       
-      console.log('处理后的代码:', processedCode)
+      // 代码处理完成
       
       // 构建请求URL - 根据搜索结果优化参数
       const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${processedCode},${period},,,${count},qfq`
-      console.log('K线请求URL:', url)
+      // K线请求URL已构建
       
       const { data } = await uni.request({
         url: url,
@@ -328,31 +324,27 @@ class StockApi {
         timeout: 10000
       })
       
-      console.log('K线API返回:', data)
+      // K线API返回数据已接收
       
       // 详细分析返回数据结构
       if (data) {
-        console.log('返回数据类型:', typeof data)
-        console.log('返回数据的keys:', Object.keys(data))
+        // 处理API返回数据
         
         if (data.data) {
-          console.log('data.data存在，类型:', typeof data.data)
-          console.log('data.data的keys:', Object.keys(data.data))
+          // data.data存在，开始解析
           
           // 检查是否有对应的股票代码数据
           if (data.data[processedCode]) {
-            console.log(`找到股票${processedCode}的数据，类型:`, typeof data.data[processedCode])
-            console.log(`股票${processedCode}数据的keys:`, Object.keys(data.data[processedCode]))
+            // 找到股票数据，开始解析
             
             // 美股数据结构不同，直接检查day字段
             if (data.data[processedCode].day) {
-              console.log('找到美股day数据:', data.data[processedCode].day)
+              // 美股day数据处理
               const klineArray = data.data[processedCode].day
-              console.log('美股K线数据长度:', klineArray.length)
-              console.log('原始K线数据前3条:', klineArray.slice(0, 3))
+              // 美股K线数据解析
               
               const parsedData = this.parseKlineData(klineArray)
-              console.log('解析后K线数据前3条:', parsedData.slice(0, 3))
+              // K线数据解析完成
               
               return parsedData
             }
@@ -373,31 +365,30 @@ class StockApi {
                 dataKey = 'qfqday'
             }
             
-            console.log(`查找数据字段: ${dataKey}`)
+            // 查找数据字段
             
             if (data.data[processedCode][dataKey]) {
               const klineArray = data.data[processedCode][dataKey]
-              console.log(`找到${dataKey}数据，长度:`, klineArray.length)
-              console.log('原始K线数据前3条:', klineArray.slice(0, 3))
+              // 数据字段解析
               
               const parsedData = this.parseKlineData(klineArray)
-              console.log('解析后K线数据前3条:', parsedData.slice(0, 3))
+              // K线数据解析完成
               
               return parsedData
             } else {
-              console.log(`未找到${dataKey}数据，可用字段:`, Object.keys(data.data[processedCode]))
+              // 数据字段不存在
             }
           } else {
-            console.log(`未找到股票${processedCode}的数据，可用股票代码:`, Object.keys(data.data))
+            // 股票数据不存在
           }
         } else {
-          console.log('data.data不存在')
+          // 数据结构异常
         }
       } else {
-        console.log('返回数据为空')
+        // 返回数据为空
       }
       
-      console.log('未找到K线数据，返回空数组')
+      // 未找到K线数据
       return []
       
     } catch (error) {
@@ -415,10 +406,10 @@ class StockApi {
     if (!code) return []
     
     try {
-      console.log('获取分时数据:', code)
+      // 获取分时数据
       
       const url = `https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=${code}`
-      console.log('分时请求URL:', url)
+      // 分时请求URL已构建
       
       const { data } = await uni.request({
         url: url,
@@ -426,26 +417,23 @@ class StockApi {
         timeout: 10000
       })
       
-      console.log('分时API返回:', data)
+      // 分时API返回数据已接收
       
       // 详细分析分时数据结构
       if (data) {
-        console.log('分时数据类型:', typeof data)
-        console.log('分时数据的keys:', Object.keys(data))
+        // 处理分时数据
         
         if (data.data) {
-          console.log('data.data存在，类型:', typeof data.data)
-          console.log('data.data的keys:', Object.keys(data.data))
+          // data.data存在，开始解析
           
           if (data.data[code]) {
-            console.log(`找到股票${code}的分时数据:`, data.data[code])
+            // 找到股票分时数据
             
             // 检查分时数据的嵌套结构
             if (data.data[code].data && data.data[code].data.data) {
-              console.log('从data.data[code].data.data获取分时数据')
+              // 从多层结构获取分时数据
               const minuteStrings = data.data[code].data.data
-              console.log('分时字符串数组长度:', minuteStrings.length)
-              console.log('分时数据示例:', minuteStrings.slice(0, 3))
+              // 分时数据获取完成
               
               // 解析分时字符串数组
               const parsedMinuteData = this.parseMinuteStrings(minuteStrings)
@@ -454,12 +442,12 @@ class StockApi {
             
             // 尝试其他可能的数据路径
             if (data.data[code].data) {
-              console.log('从data.data[code].data获取分时数据')
+              // 从单层结构获取分时数据
               return this.parseMinuteData(data.data[code].data)
             }
             
             if (Array.isArray(data.data[code])) {
-              console.log('data.data[code]是数组，直接解析')
+              // 直接解析数组数据
               return this.parseMinuteData(data.data[code])
             }
           }
@@ -481,15 +469,15 @@ class StockApi {
    */
   static parseKlineData(klineArray) {
     if (!Array.isArray(klineArray)) {
-      console.log('K线数据不是数组:', typeof klineArray, klineArray)
+      // K线数据格式错误
       return []
     }
     
-    console.log('开始解析K线数据，数组长度:', klineArray.length)
+    // 开始解析K线数据
     
     const parsed = klineArray.map((item, index) => {
       if (!Array.isArray(item)) {
-        console.log(`第${index}条数据不是数组:`, item)
+        // 数据项格式错误
         return null
       }
       
@@ -505,16 +493,13 @@ class StockApi {
       
       // 记录前几条的解析结果
       if (index < 3) {
-        console.log(`第${index}条K线数据解析:`, {
-          原始: item,
-          解析: result
-        })
+        // K线数据解析
       }
       
       return result
     }).filter(item => item !== null)
     
-    console.log('K线数据解析完成，有效数据:', parsed.length)
+    // K线数据解析完成
     return parsed
   }
 
@@ -525,22 +510,22 @@ class StockApi {
    */
   static parseMinuteStrings(minuteStrings) {
     if (!Array.isArray(minuteStrings)) {
-      console.log('分时数据不是数组:', typeof minuteStrings)
+      // 分时数据格式错误
       return []
     }
     
-    console.log('开始解析分时字符串，数量:', minuteStrings.length)
+    // 开始解析分时数据
     
     const parsed = minuteStrings.map((str, index) => {
       if (typeof str !== 'string') {
-        console.log(`第${index}条分时数据不是字符串:`, str)
+        // 分时数据项格式错误
         return null
       }
       
       // 按空格分割: "0930 26.65 1141 3040765.00" -> ["0930", "26.65", "1141", "3040765.00"]
       const parts = str.trim().split(/\s+/)
       if (parts.length < 4) {
-        console.log(`第${index}条分时数据格式错误:`, str)
+        // 分时数据格式错误
         return null
       }
       
@@ -553,16 +538,13 @@ class StockApi {
       
       // 记录前几条的解析结果
       if (index < 3) {
-        console.log(`第${index}条分时数据解析:`, {
-          原始: str,
-          解析: result
-        })
+        // 分时数据解析
       }
       
       return result
     }).filter(item => item !== null)
     
-    console.log('分时数据解析完成，有效数据:', parsed.length)
+    // 分时数据解析完成
     return parsed
   }
 

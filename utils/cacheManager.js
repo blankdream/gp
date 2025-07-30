@@ -45,7 +45,7 @@ class CacheManager {
 
     this.cacheTimeout.set(key, timeoutId)
     
-    console.log(`缓存已设置: ${key}, TTL: ${ttl}ms`)
+    // 缓存已设置
   }
 
   /**
@@ -60,7 +60,7 @@ class CacheManager {
       return null
     }
 
-    console.log(`缓存命中: ${key}`)
+    // 缓存命中
     return cached.data
   }
 
@@ -77,7 +77,7 @@ class CacheManager {
       this.cacheTimeout.delete(key)
     }
     
-    console.log(`缓存已删除: ${key}`)
+    // 缓存已删除
   }
 
   /**
@@ -95,7 +95,7 @@ class CacheManager {
     }
     
     keysToDelete.forEach(key => this.delete(key))
-    console.log(`已清除 ${type} 类型的所有缓存，用户: ${userId}`)
+    // 类型缓存已清除
   }
 
   /**
@@ -109,7 +109,7 @@ class CacheManager {
     
     this.cache.clear()
     this.cacheTimeout.clear()
-    console.log('所有缓存已清除')
+    // 所有缓存已清除
   }
 
   /**
