@@ -10,12 +10,6 @@
       >
         {{ period.label }}
       </view>
-      <!-- 调试控制器（可选，用于开发调试） -->
-      <view class="debug-controls" v-if="currentPeriod !== 'minute'">
-        <text class="current-count">{{ currentVisibleCount }}根</text>
-        <button class="zoom-btn" @tap="manualZoom(-5)">-</button>
-        <button class="zoom-btn" @tap="manualZoom(5)">+</button>
-      </view>
     </view>
     
     <!-- 图表容器 -->
@@ -341,6 +335,11 @@ export default {
         return
       }
       
+      // 缩放时关闭十字线和详情，因为数据范围改变后十字线位置无效
+      this.showCrosshair = false
+      this.crosshairData = null
+      this.crosshairDataIndex = -1
+      
       // 更新当前可见数量
       this.currentVisibleCount = validCount
       
@@ -555,10 +554,10 @@ export default {
         const bottomPadding = 40
         return topPadding + mainChartHeight + bottomPadding
       } else {
-        // K线图：主图 + 成交量图 + 间隔（移除了时间标签空间）
+        // K线图：主图 + 成交量图（日期标签在中间，不需要额外空间）
         const volumeChartHeight = 35
         const volumeGap = 20
-        const extraSpace = 10 // 少量额外空间
+        const extraSpace = 10
         const bottomPadding = volumeGap + volumeChartHeight + extraSpace
         return topPadding + mainChartHeight + bottomPadding
       }
@@ -963,6 +962,8 @@ export default {
         } else {
           this.drawKlines(ctx, visibleData, leftPadding, topPadding, chartWidth, mainChartHeight, minPrice, maxPrice)
           this.drawSeparatorLine(ctx, leftPadding, topPadding + mainChartHeight + 10, chartWidth)
+          // 在K线和成交量之间绘制日期标签
+          this.drawKlineDateLabels(ctx, visibleData, leftPadding, topPadding + mainChartHeight + 30, chartWidth)
           this.drawVolumeChart(ctx, visibleData, leftPadding, volumeChartTop, chartWidth, volumeChartHeight)
         }
         
@@ -1275,6 +1276,61 @@ export default {
       } else {
         return volume.toString()
       }
+    },
+    
+    // 绘制K线日期标签（3个均匀分布的日期标签）
+    drawKlineDateLabels(ctx, data, leftPadding, yPosition, width) {
+      if (!data || data.length === 0) return
+      
+      ctx.fillStyle = '#666666'
+      ctx.font = '12px sans-serif'
+      ctx.textAlign = 'center'
+      
+      // 设置左右边距为20px
+      const marginLR = 20
+      const labelWidth = width - (marginLR * 2)
+      const labelStartX = leftPadding + marginLR
+      
+      // 计算3个标签的位置索引：左边、中间、右边
+      const leftIndex = 0
+      const middleIndex = Math.floor(data.length / 2)
+      const rightIndex = data.length - 1
+      
+      // 计算每个标签对应的K线中心位置
+      const barWidth = width / data.length
+      
+      // 左边标签
+      if (data[leftIndex] && data[leftIndex].date) {
+        const leftX = labelStartX
+        const leftDate = this.formatDateLabel(data[leftIndex].date)
+        ctx.textAlign = 'left'
+        ctx.fillText(leftDate, leftX, yPosition)
+      }
+      
+      // 中间标签
+      if (data[middleIndex] && data[middleIndex].date) {
+        const middleX = leftPadding + middleIndex * barWidth + barWidth / 2
+        // 确保中间标签在可用区域内
+        const clampedMiddleX = Math.max(labelStartX + 50, Math.min(labelStartX + labelWidth - 50, middleX))
+        const middleDate = this.formatDateLabel(data[middleIndex].date)
+        ctx.textAlign = 'center'
+        ctx.fillText(middleDate, clampedMiddleX, yPosition)
+      }
+      
+      // 右边标签
+      if (data[rightIndex] && data[rightIndex].date) {
+        const rightX = labelStartX + labelWidth
+        const rightDate = this.formatDateLabel(data[rightIndex].date)
+        ctx.textAlign = 'right'
+        ctx.fillText(rightDate, rightX, yPosition)
+      }
+    },
+    // 格式化日期标签显示（直接使用接口返回的字符串）
+    formatDateLabel(date) {
+      if (!date) return '--'
+      
+      // 直接返回接口返回的日期字符串
+      return date.toString()
     },
     
     // 绘制K线时间标签
@@ -1817,8 +1873,8 @@ export default {
         
         ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight)
         
-        const leftPadding = 15  // 大幅减少左边距，从30减少到15
-        const rightPadding = 5   // 优化右边距，增加图表宽度
+        const leftPadding = 15  // 与其他方法保持一致，确保十字线对齐
+        const rightPadding = 5  // 与其他方法保持一致
         const topPadding = 20
         
         let bottomPadding = 40
@@ -1883,6 +1939,8 @@ export default {
         } else {
           this.drawKlines(ctx, visibleData, leftPadding, topPadding, chartWidth, mainChartHeight, minPrice, maxPrice)
           this.drawSeparatorLine(ctx, leftPadding, topPadding + mainChartHeight + 10, chartWidth)
+          // 在K线和成交量之间绘制日期标签
+          this.drawKlineDateLabels(ctx, visibleData, leftPadding, topPadding + mainChartHeight + 30, chartWidth)
           this.drawVolumeChart(ctx, visibleData, leftPadding, volumeChartTop, chartWidth, volumeChartHeight)
         }
         
@@ -1966,8 +2024,8 @@ export default {
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight)
         
-        const leftPadding = 15  // 大幅减少左边距，从30减少到15
-        const rightPadding = 5   // 优化右边距，增加图表宽度
+        const leftPadding = 15  // 与其他方法保持一致，确保十字线对齐
+        const rightPadding = 5  // 与其他方法保持一致
         const topPadding = 20
         
         let bottomPadding = 40
@@ -2032,6 +2090,8 @@ export default {
         } else {
           this.drawKlines(ctx, visibleData, leftPadding, topPadding, chartWidth, mainChartHeight, minPrice, maxPrice)
           this.drawSeparatorLine(ctx, leftPadding, topPadding + mainChartHeight + 10, chartWidth)
+          // 在K线和成交量之间绘制日期标签
+          this.drawKlineDateLabels(ctx, visibleData, leftPadding, topPadding + mainChartHeight + 30, chartWidth)
           this.drawVolumeChart(ctx, visibleData, leftPadding, volumeChartTop, chartWidth, volumeChartHeight)
         }
         
@@ -2709,49 +2769,6 @@ export default {
       color: #fff;
     }
   }
-  
-  .debug-controls {
-    display: flex;
-    align-items: center;
-    gap: 8rpx;
-    margin-left: 16rpx;
-    
-    .current-count {
-      font-size: 24rpx;
-      color: #666;
-      min-width: 80rpx;
-      text-align: center;
-    }
-    
-    .zoom-btn {
-      width: 60rpx;
-      height: 60rpx;
-      border-radius: 50%;
-      background: #ffffff;
-      color: #000000;
-      border: 2px solid #e0e0e0;
-      font-size: 28rpx;
-      font-weight: bold;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 0;
-      margin: 0;
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-      transition: all 0.2s ease;
-      
-      &:active {
-        background: #f5f5f5;
-        transform: scale(0.95);
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-      }
-      
-      &:hover {
-        border-color: #1976d2;
-        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
-      }
-    }
-  }
 }
 
 .chart-container {
@@ -2838,7 +2855,7 @@ export default {
   top: -2px;
   left: 0;
   right: 0;
-  width: calc(100% - 40px); /* 适应极小左边距15px */
+  width: calc(100% - 120px); /* 适应统一的左边距60px，两边各留出60px空间 */
   background: rgba(255, 255, 255, 0.95); /* 提高透明度 */
   border: 1px solid rgba(0, 0, 0, 0.08); /* 更淡的边框 */
   border-radius: 6px; /* 增加圆角 */
@@ -2846,7 +2863,7 @@ export default {
   z-index: 10;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08); /* 更柔和的阴影 */
   margin: 5px auto; /* 居中显示 */
-  margin-left: 20px; /* 适应新的极小左边距15px */
+  margin-left: 60px; /* 适应统一的左边距60px，确保十字线对齐 */
   
   .info-content {
     display: flex;
