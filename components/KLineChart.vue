@@ -10,10 +10,16 @@
       >
         {{ period.label }}
       </view>
+      <!-- 调试控制器（可选，用于开发调试） -->
+      <view class="debug-controls" v-if="currentPeriod !== 'minute'">
+        <text class="current-count">{{ currentVisibleCount }}根</text>
+        <button class="zoom-btn" @tap="manualZoom(-5)">-</button>
+        <button class="zoom-btn" @tap="manualZoom(5)">+</button>
+      </view>
     </view>
     
     <!-- 图表容器 -->
-    <view class="chart-container" v-if="!loading && klineData.length">
+    <view class="chart-container" v-if="!loading && klineData.length" @wheel.prevent="onWheel">
       <!-- 十字线信息显示在顶部一行 -->
       <view v-if="showCrosshair && crosshairData" class="crosshair-info-top">
         <view class="info-content">
@@ -40,6 +46,7 @@
         @touchstart="onTouchStart"
         @touchmove="onTouchMove"
         @touchend="onTouchEnd"
+        @wheel.prevent="onWheel"
       ></canvas>
     </view>
     
@@ -138,6 +145,20 @@ export default {
       chartInitialized: false,
       // 防止initChart内部的setTimeout重复执行
       initChartTimeout: null,
+      // 缩放功能相关
+      currentVisibleCount: 50, // 当前可见的K线数量（动态调整）
+      isZooming: false, // 是否正在缩放
+      lastDistance: 0, // 上次双指间距离
+      zoomStartDistance: 0, // 缩放开始时的双指距离
+      zoomStartVisibleCount: 50, // 缩放开始时的可见数量
+      zoomThrottleTimer: null, // 缩放节流定时器
+      // 缩放边界设置
+      minVisibleCount: 30, // 最小显示数量（动态设置为当前周期的默认值）
+      maxVisibleCount: 200, // 最大显示数量
+      // 缩放敏感度设置
+      wheelZoomStep: 3, // 滚轮每次缩放的步长
+      touchZoomSensitivity: 0.5, // 触摸缩放敏感度
+      lastWheelDirection: 1, // 用于交替滚轮方向的变量
     }
   },
   mounted() {
@@ -173,6 +194,11 @@ export default {
       clearTimeout(this.initChartTimeout)
       this.initChartTimeout = null
     }
+    // 清理缩放相关定时器
+    if (this.zoomThrottleTimer) {
+      clearTimeout(this.zoomThrottleTimer)
+      this.zoomThrottleTimer = null
+    }
   },
   beforeUnmount() {
     // Vue 3 兼容性
@@ -184,6 +210,11 @@ export default {
     if (this.initChartTimeout) {
       clearTimeout(this.initChartTimeout)
       this.initChartTimeout = null
+    }
+    // 清理缩放相关定时器
+    if (this.zoomThrottleTimer) {
+      clearTimeout(this.zoomThrottleTimer)
+      this.zoomThrottleTimer = null
     }
   },
   deactivated() {
@@ -215,6 +246,144 @@ export default {
     }
   },
   methods: {
+    // 鼠标滚轮缩放事件处理
+    onWheel(e) {
+      // 强制阻止页面滚动
+      e.preventDefault()
+      e.stopPropagation()
+      
+      // 只在非分时图模式下支持缩放
+      if (this.currentPeriod === 'minute') {
+        return false
+      }
+      
+      // 检查是否有K线数据
+      if (!this.klineData.length) {
+        return false
+      }
+      
+      // 获取滚轮方向 - 兼容不同浏览器和环境
+      let delta = 0
+      
+      // 尝试多种可能的属性
+      if (e.deltaY !== undefined && e.deltaY !== null && !isNaN(e.deltaY)) {
+        delta = e.deltaY
+      } else if (e.wheelDelta !== undefined && e.wheelDelta !== null && !isNaN(e.wheelDelta)) {
+        delta = -e.wheelDelta // wheelDelta方向相反
+      } else if (e.detail !== undefined && e.detail !== null && !isNaN(e.detail) && typeof e.detail === 'number') {
+        delta = e.detail * 40 // Firefox
+      } else if (e.wheelDeltaY !== undefined && e.wheelDeltaY !== null && !isNaN(e.wheelDeltaY)) {
+        delta = -e.wheelDeltaY
+      } else if (e.wheelDeltaX !== undefined && e.wheelDeltaX !== null && !isNaN(e.wheelDeltaX)) {
+        delta = -e.wheelDeltaX
+      } else {
+        // 尝试从嵌套对象中获取
+        if (typeof e.detail === 'object' && e.detail !== null) {
+          if (e.detail.deltaY !== undefined && !isNaN(e.detail.deltaY)) {
+            delta = e.detail.deltaY
+          } else if (e.detail.wheelDelta !== undefined && !isNaN(e.detail.wheelDelta)) {
+            delta = -e.detail.wheelDelta
+          }
+        }
+        
+        // 最终备用方案：使用交替方向（适用于无法检测滚轮方向的环境）
+        if (delta === 0 || isNaN(delta)) {
+          // 使用交替机制确保可以双向缩放
+          if (!this.lastWheelDirection) {
+            this.lastWheelDirection = 1
+          }
+          this.lastWheelDirection *= -1  // 交替方向
+          delta = this.lastWheelDirection * 100
+        }
+      }
+      
+      let newVisibleCount = this.currentVisibleCount
+      
+      if (delta > 0) {
+        // 向下滚动，增加显示数量（缩小K线）
+        newVisibleCount += this.wheelZoomStep
+      } else if (delta < 0) {
+        // 向上滚动，减少显示数量（放大K线）
+        newVisibleCount -= this.wheelZoomStep
+      } else {
+        return false
+      }
+      
+      // 应用边界限制
+      newVisibleCount = Math.max(this.minVisibleCount, Math.min(this.maxVisibleCount, newVisibleCount))
+      
+      // 如果数量没有变化，不需要重绘
+      if (newVisibleCount === this.currentVisibleCount) {
+        return false
+      }
+      
+      // 调用统一的缩放处理方法
+      this.handleZoomScale(newVisibleCount, 'wheel')
+      
+      return false
+    },
+    
+    // 统一的缩放处理方法
+    handleZoomScale(newVisibleCount, source = 'unknown') {
+      // 边界检查和数据验证
+      if (!this.klineData.length) {
+        return
+      }
+      
+      // 应用边界限制
+      const validCount = Math.max(
+        this.minVisibleCount, 
+        Math.min(this.maxVisibleCount, Math.min(newVisibleCount, this.klineData.length))
+      )
+      
+      // 检查是否真的需要更新
+      if (validCount === this.currentVisibleCount) {
+        return
+      }
+      
+      // 更新当前可见数量
+      this.currentVisibleCount = validCount
+      
+      // 根据来源选择不同的重绘策略
+      if (source === 'wheel') {
+        // 滚轮缩放：立即重绘
+        if (!this.isDrawing) {
+          this.drawChartSafely()
+        }
+      } else if (source === 'touch') {
+        // 触摸缩放：已在onTouchMove中处理节流
+        // 这里不需要额外操作
+      } else {
+        // 其他来源：使用节流重绘
+        if (this.zoomThrottleTimer) {
+          clearTimeout(this.zoomThrottleTimer)
+        }
+        this.zoomThrottleTimer = setTimeout(() => {
+          if (!this.isDrawing && this.klineData.length > 0) {
+            this.drawChartSafely()
+          }
+        }, 16)
+      }
+    },
+    
+    // 手动缩放方法（用于调试）
+    manualZoom(step) {
+      const newCount = this.currentVisibleCount + step
+      this.handleZoomScale(newCount, 'manual')
+    },
+    
+    // 计算两点间距离（用于双指缩放）
+    calculateDistance(touch1, touch2) {
+      const dx = touch1.x - touch2.x
+      const dy = touch1.y - touch2.y
+      return Math.sqrt(dx * dx + dy * dy)
+    },
+    
+    // 检测是否为双指手势
+    isTwoFingerGesture(touches) {
+      return touches && touches.length === 2
+    },
+    
     // 获取Canvas 2D上下文
     async getCanvasContext() {
       if (!this.canvasWidth || !this.canvasHeight) {
@@ -604,18 +773,13 @@ export default {
     
     // 获取当前周期的可见数量
     getVisibleCount() {
-      switch (this.currentPeriod) {
-        case 'minute':
-          return this.klineData.length // 分时图显示全部
-        case 'day':
-          return Math.min(50, this.klineData.length) // 日K线显示50根
-        case 'week':
-          return Math.min(40, this.klineData.length) // 周K线显示40根
-        case 'month':
-          return Math.min(30, this.klineData.length) // 月K线显示30根
-        default:
-          return Math.min(50, this.klineData.length)
+      // 分时图不支持缩放，始终显示全部数据
+      if (this.currentPeriod === 'minute') {
+        return this.klineData.length
       }
+      
+      // K线图使用动态可见数量，但不能超过实际数据长度
+      return Math.min(this.currentVisibleCount, this.klineData.length)
     },
     
     // 切换周期
@@ -639,6 +803,25 @@ export default {
       this.canvasHeight = this.calculateOptimalHeight()
       this.klineData = []
       
+      // 重置为每个周期的默认可见数量，并设置对应的最小值
+      switch (period) {
+        case 'day':
+          this.currentVisibleCount = 50
+          this.minVisibleCount = 50  // 最少显示50根日K线
+          break
+        case 'week':
+          this.currentVisibleCount = 40
+          this.minVisibleCount = 40  // 最少显示40根周K线
+          break
+        case 'month':
+          this.currentVisibleCount = 30
+          this.minVisibleCount = 30  // 最少显示30根月K线
+          break
+        default:
+          this.currentVisibleCount = 50
+          this.minVisibleCount = 50
+      }
+      
       // 完全重置绘制状态和缓存
       this.lastDrawnDataLength = 0
       this.lastDrawnPeriod = ''
@@ -646,6 +829,16 @@ export default {
       this.lastSuccessfulLoadKey = '' // 重置成功加载key，强制重新加载
       this.loadRetryCount = 0
       this.currentLoadingPeriod = ''
+      
+      // 重置缩放相关状态
+      this.isZooming = false
+      this.lastDistance = 0
+      this.zoomStartDistance = 0
+      this.zoomStartVisibleCount = 0
+      if (this.zoomThrottleTimer) {
+        clearTimeout(this.zoomThrottleTimer)
+        this.zoomThrottleTimer = null
+      }
       
       // 重置Canvas上下文，强制重新初始化
       this.canvas2D = null
@@ -1321,11 +1514,32 @@ export default {
     
     // 触摸开始
     onTouchStart(e) {
-      if (e.touches && e.touches.length > 0) {
+      if (!e.touches || e.touches.length === 0) return
+      
+      // 检查是否为双指缩放手势
+      if (this.isTwoFingerGesture(e.touches) && this.currentPeriod !== 'minute') {
+        // 双指缩放模式
+        this.isZooming = true
+        this.isDragging = false
+        this.showCrosshair = false // 隐藏十字线
+        
+        // 计算初始距离
+        const touch1 = e.touches[0]
+        const touch2 = e.touches[1]
+        this.lastDistance = this.calculateDistance(touch1, touch2)
+        this.zoomStartDistance = this.lastDistance
+        this.zoomStartVisibleCount = this.currentVisibleCount
+        
+        return
+      }
+      
+      // 单指操作（原有逻辑）
+      if (e.touches.length === 1) {
         const touch = e.touches[0]
         this.startX = touch.x
         this.startY = touch.y
         this.isDragging = false
+        this.isZooming = false
         
         // 不立即显示十字线，等待触摸结束判断是否为点击
       }
@@ -1335,27 +1549,80 @@ export default {
     onTouchMove(e) {
       if (!e.touches || e.touches.length === 0) return
       
-      const touch = e.touches[0]
-      const deltaX = Math.abs(touch.x - this.startX)
-      const deltaY = Math.abs(touch.y - this.startY)
-      
-      // 如果移动距离超过阈值，标记为拖拽
-      if (deltaX > 5 || deltaY > 5) {
-        this.isDragging = true
+      // 双指缩放处理
+      if (this.isZooming && this.isTwoFingerGesture(e.touches)) {
+        const touch1 = e.touches[0]
+        const touch2 = e.touches[1]
+        const currentDistance = this.calculateDistance(touch1, touch2)
+        
+        // 计算缩放比例
+        const distanceChange = currentDistance - this.zoomStartDistance
+        const scaleFactor = 1 + (distanceChange * this.touchZoomSensitivity / 100)
+        
+        // 计算新的可见数量
+        let newVisibleCount = Math.round(this.zoomStartVisibleCount / scaleFactor)
+        
+        // 应用边界限制
+        newVisibleCount = Math.max(this.minVisibleCount, Math.min(this.maxVisibleCount, newVisibleCount))
+        
+        // 如果数量有明显变化才更新
+        if (Math.abs(newVisibleCount - this.currentVisibleCount) >= 1) {
+          // 使用统一的缩放处理方法，但传递'touch'标识
+          this.currentVisibleCount = newVisibleCount
+          
+          // 节流重绘
+          if (this.zoomThrottleTimer) {
+            clearTimeout(this.zoomThrottleTimer)
+          }
+          this.zoomThrottleTimer = setTimeout(() => {
+            if (!this.isDrawing && this.klineData.length > 0) {
+              this.drawChartSafely()
+            }
+          }, 16) // 约60fps
+        }
+        
+        return
       }
       
-      // 如果十字线已经显示且正在拖拽，更新十字线位置
-      if (this.showCrosshair && this.isDragging) {
-        // 微信小程序环境使用相应的API
-        const raf = uni.requestAnimationFrame || ((callback) => setTimeout(callback, 16));
-        raf(() => {
-          this.updateCrosshair(touch.x, touch.y)
-        })
+      // 单指操作（原有逻辑）
+      if (e.touches.length === 1 && !this.isZooming) {
+        const touch = e.touches[0]
+        const deltaX = Math.abs(touch.x - this.startX)
+        const deltaY = Math.abs(touch.y - this.startY)
+        
+        // 如果移动距离超过阈值，标记为拖拽
+        if (deltaX > 5 || deltaY > 5) {
+          this.isDragging = true
+        }
+        
+        // 如果十字线已经显示且正在拖拽，更新十字线位置
+        if (this.showCrosshair && this.isDragging) {
+          // 微信小程序环境使用相应的API
+          const raf = uni.requestAnimationFrame || ((callback) => setTimeout(callback, 16));
+          raf(() => {
+            this.updateCrosshair(touch.x, touch.y)
+          })
+        }
       }
     },
     
     // 触摸结束
     onTouchEnd(e) {
+      // 清除缩放节流定时器
+      if (this.zoomThrottleTimer) {
+        clearTimeout(this.zoomThrottleTimer)
+        this.zoomThrottleTimer = null
+      }
+      
+      // 如果是缩放操作结束
+      if (this.isZooming) {
+        this.isZooming = false
+        this.lastDistance = 0
+        this.zoomStartDistance = 0
+        this.zoomStartVisibleCount = 0
+        return
+      }
+      
       // 微信小程序环境使用相应的API
       const raf = uni.requestAnimationFrame || ((callback) => setTimeout(callback, 16));
       raf(() => {
@@ -2425,6 +2692,7 @@ export default {
   background: #f5f5f5;
   padding: 16rpx;
   gap: 16rpx;
+  align-items: center;
   
   .period-item {
     flex: 1;
@@ -2441,6 +2709,49 @@ export default {
       color: #fff;
     }
   }
+  
+  .debug-controls {
+    display: flex;
+    align-items: center;
+    gap: 8rpx;
+    margin-left: 16rpx;
+    
+    .current-count {
+      font-size: 24rpx;
+      color: #666;
+      min-width: 80rpx;
+      text-align: center;
+    }
+    
+    .zoom-btn {
+      width: 60rpx;
+      height: 60rpx;
+      border-radius: 50%;
+      background: #ffffff;
+      color: #000000;
+      border: 2px solid #e0e0e0;
+      font-size: 28rpx;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      margin: 0;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      transition: all 0.2s ease;
+      
+      &:active {
+        background: #f5f5f5;
+        transform: scale(0.95);
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+      }
+      
+      &:hover {
+        border-color: #1976d2;
+        box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+      }
+    }
+  }
 }
 
 .chart-container {
@@ -2451,6 +2762,11 @@ export default {
   border: 1px solid #e0e0e0;
   overflow: visible;
   margin: 0; /* 移除外边距 */
+  /* 确保可以接收滚轮事件 */
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
   
   .chart-canvas {
     width: 100%;
@@ -2464,6 +2780,9 @@ export default {
     touch-action: auto;
     pointer-events: auto;
     margin: 0; /* 移除画布边距 */
+    /* 确保滚轮事件被正确处理 */
+    overflow: hidden;
+    -webkit-overflow-scrolling: touch;
   }
 }
 
