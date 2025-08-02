@@ -23,7 +23,7 @@
             <text class="info-item" :class="getPriceChangeClass(crosshairData.price)">幅: {{ formatPriceChange(crosshairData.price) }}</text>
           </template>
           <template v-else>
-            <text class="info-item">{{ formatCrosshairDate(crosshairData.date) }}</text>
+            <text class="info-item">{{ formatDate(crosshairData.date, 'detailed') }}</text>
             <text class="info-item">开: {{ formatPrice(crosshairData.open) }}</text>
             <text class="info-item">收: {{ formatPrice(crosshairData.close) }}</text>
             <text class="info-item" :class="getPriceChangeClass(crosshairData.close, crosshairData.open)">幅: {{ formatKlinePriceChange(crosshairData) }}</text>
@@ -74,7 +74,7 @@ const CHART_CONFIG = {
     RIGHT_MINUTE: 20,  // 分时图右边距，为涨跌幅标签预留足够空间
     RIGHT_KLINE: 5,    // K线图右边距
     TOP: 10,       // 顶部边距
-    BOTTOM: 5,    // 分时图底部边距
+    BOTTOM: 35,    // 分时图底部边距，为时间标签预留空间
     VOLUME_GAP: 20, // K线图和成交量图间隔
     VOLUME_HEIGHT: 35, // 成交量图高度
     EXTRA_SPACE: 0    // 额外空间
@@ -113,7 +113,7 @@ const CHART_CONFIG = {
     DOUBLE_CLICK_THRESHOLD: 400, // 双击检测阈值（毫秒）
     DRAG_THRESHOLD: 5,           // 拖拽检测阈值（像素）
     CROSSHAIR_RADIUS: 3,         // 十字线交叉点半径
-    CROSSHAIR_DRAG_THROTTLE: 50  // 十字线拖拽节流延迟（毫秒）
+    CROSSHAIR_DRAG_THROTTLE: 30  // 十字线拖拽节流延迟（毫秒）
   },
   
   // 字体配置
@@ -167,8 +167,6 @@ export default {
       crosshairY: 0,
       crosshairDataIndex: -1,
       crosshairData: null,
-      // 昨收价
-      yesterdayClosePrice: 0,
       // 双击检测
       lastTapTime: 0,
       tapTimeout: null,
@@ -190,13 +188,11 @@ export default {
       ctx2D: null,
       // 防重复绘制的优化
       lastDrawTimestamp: 0,
-      drawThrottleDelay: CHART_CONFIG.PERFORMANCE.DRAW_THROTTLE_DELAY, // 统一节流延迟
-      // 绘制优化已简化，移除复杂的key检查
+      drawThrottleDelay: CHART_CONFIG.PERFORMANCE.DRAW_THROTTLE_DELAY,
       // Canvas初始化状态
       canvasInitializing: false, // 新增：防止重复初始化
       // 防止initChart重复执行
       chartInitialized: false,
-      // 防止initChart内部的setTimeout重复执行
       initChartTimeout: null,
       // 缩放功能相关
       currentVisibleCount: 50, // 当前可见的K线数量（动态调整）
@@ -244,47 +240,11 @@ export default {
     // K线图组件已挂载
   },
   beforeDestroy() {
-    this.stopMinuteRefresh()
-    if (this.loadKlineDataTimer) {
-      clearTimeout(this.loadKlineDataTimer)
-      this.loadKlineDataTimer = null
-    }
-    if (this.initChartTimeout) {
-      clearTimeout(this.initChartTimeout)
-      this.initChartTimeout = null
-    }
-    // 清理缩放相关定时器
-    if (this.zoomThrottleTimer) {
-      clearTimeout(this.zoomThrottleTimer)
-      this.zoomThrottleTimer = null
-    }
-    // 清理十字线拖拽节流定时器
-    if (this.crosshairDragThrottleTimer) {
-      clearTimeout(this.crosshairDragThrottleTimer)
-      this.crosshairDragThrottleTimer = null
-    }
+    this.cleanup()
   },
   beforeUnmount() {
     // Vue 3 兼容性
-    this.stopMinuteRefresh()
-    if (this.loadKlineDataTimer) {
-      clearTimeout(this.loadKlineDataTimer)
-      this.loadKlineDataTimer = null
-    }
-    if (this.initChartTimeout) {
-      clearTimeout(this.initChartTimeout)
-      this.initChartTimeout = null
-    }
-    // 清理缩放相关定时器
-    if (this.zoomThrottleTimer) {
-      clearTimeout(this.zoomThrottleTimer)
-      this.zoomThrottleTimer = null
-    }
-    // 清理十字线拖拽节流定时器
-    if (this.crosshairDragThrottleTimer) {
-      clearTimeout(this.crosshairDragThrottleTimer)
-      this.crosshairDragThrottleTimer = null
-    }
+    this.cleanup()
   },
   deactivated() {
     // keep-alive 组件失活时停止定时器
@@ -315,6 +275,62 @@ export default {
     }
   },
   methods: {
+    // 统一的清理方法
+    cleanup() {
+      this.stopMinuteRefresh()
+      if (this.loadKlineDataTimer) {
+        clearTimeout(this.loadKlineDataTimer)
+        this.loadKlineDataTimer = null
+      }
+      if (this.initChartTimeout) {
+        clearTimeout(this.initChartTimeout)
+        this.initChartTimeout = null
+      }
+      // 清理缩放相关定时器
+      if (this.zoomThrottleTimer) {
+        clearTimeout(this.zoomThrottleTimer)
+        this.zoomThrottleTimer = null
+      }
+      // 清理十字线拖拽节流定时器
+      if (this.crosshairDragThrottleTimer) {
+        clearTimeout(this.crosshairDragThrottleTimer)
+        this.crosshairDragThrottleTimer = null
+      }
+    },
+    
+    // 计算图表布局参数
+    calculateChartLayout() {
+      const leftPadding = CHART_CONFIG.PADDING.LEFT
+      const rightPadding = this.getRightPadding()
+      const topPadding = CHART_CONFIG.PADDING.TOP
+      
+      let bottomPadding = CHART_CONFIG.PADDING.BOTTOM
+      let volumeChartHeight = 0
+      let volumeChartTop = 0
+      
+      if (this.currentPeriod !== 'minute') {
+        volumeChartHeight = CHART_CONFIG.PADDING.VOLUME_HEIGHT
+        const volumeGap = CHART_CONFIG.PADDING.VOLUME_GAP
+        const extraSpace = CHART_CONFIG.PADDING.EXTRA_SPACE
+        bottomPadding = volumeGap + volumeChartHeight + extraSpace
+        volumeChartTop = topPadding + (this.canvasHeight - topPadding - bottomPadding) + volumeGap
+      }
+      
+      const chartWidth = this.canvasWidth - leftPadding - rightPadding
+      const mainChartHeight = this.canvasHeight - topPadding - bottomPadding
+      
+      return {
+        leftPadding,
+        rightPadding,
+        topPadding,
+        bottomPadding,
+        chartWidth,
+        mainChartHeight,
+        volumeChartHeight,
+        volumeChartTop
+      }
+    },
+    
     // 获取右边距（根据图表类型动态调整）
     getRightPadding() {
       return this.currentPeriod === 'minute' ? CHART_CONFIG.PADDING.RIGHT_MINUTE : CHART_CONFIG.PADDING.RIGHT_KLINE
@@ -994,26 +1010,11 @@ export default {
         
         ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight)
         
-        const leftPadding = CHART_CONFIG.PADDING.LEFT
-        const rightPadding = this.getRightPadding()
-        const topPadding = CHART_CONFIG.PADDING.TOP
+        // 使用统一的布局计算
+        const layout = this.calculateChartLayout()
+        const { leftPadding, topPadding, chartWidth, mainChartHeight, volumeChartHeight, volumeChartTop } = layout
         
         // 绘制参数调试
-        
-        let bottomPadding = CHART_CONFIG.PADDING.BOTTOM
-        let volumeChartHeight = 0
-        let volumeChartTop = 0
-        
-        if (this.currentPeriod !== 'minute') {
-          volumeChartHeight = CHART_CONFIG.PADDING.VOLUME_HEIGHT
-          const volumeGap = CHART_CONFIG.PADDING.VOLUME_GAP
-          const extraSpace = CHART_CONFIG.PADDING.EXTRA_SPACE
-          bottomPadding = volumeGap + volumeChartHeight + extraSpace
-          volumeChartTop = topPadding + (this.canvasHeight - topPadding - bottomPadding) + volumeGap
-        }
-        
-        const chartWidth = this.canvasWidth - leftPadding - rightPadding
-        const mainChartHeight = this.canvasHeight - topPadding - bottomPadding
         
         const endIndex = this.klineData.length
         let startIndex, visibleData
@@ -1494,7 +1495,7 @@ export default {
       // 左边标签
       if (data[leftIndex] && data[leftIndex].date) {
         const leftX = labelStartX
-        const leftDate = this.formatDateLabel(data[leftIndex].date)
+        const leftDate = this.formatDate(data[leftIndex].date)
         ctx.textAlign = 'left'
         ctx.fillText(leftDate, leftX, yPosition)
       }
@@ -1504,7 +1505,7 @@ export default {
         const middleX = leftPadding + middleIndex * barWidth + barWidth / 2
         // 确保中间标签在可用区域内
         const clampedMiddleX = Math.max(labelStartX + 50, Math.min(labelStartX + labelWidth - 50, middleX))
-        const middleDate = this.formatDateLabel(data[middleIndex].date)
+        const middleDate = this.formatDate(data[middleIndex].date)
         ctx.textAlign = 'center'
         ctx.fillText(middleDate, clampedMiddleX, yPosition)
       }
@@ -1512,73 +1513,50 @@ export default {
       // 右边标签
       if (data[rightIndex] && data[rightIndex].date) {
         const rightX = labelStartX + labelWidth
-        const rightDate = this.formatDateLabel(data[rightIndex].date)
+        const rightDate = this.formatDate(data[rightIndex].date)
         ctx.textAlign = 'right'
         ctx.fillText(rightDate, rightX, yPosition)
       }
     },
-    // 格式化日期标签显示（直接使用接口返回的字符串）
-    formatDateLabel(date) {
+    // 格式化日期显示（统一方法）
+    formatDate(date, format = 'simple') {
       if (!date) return '--'
       
-      // 直接返回接口返回的日期字符串
-      return date.toString()
-    },
-    
-    // 绘制K线时间标签
-    drawKlineTimeLabels(ctx, data, leftPadding, yPosition, width) {
-      if (!data || data.length === 0) return
-      
-      ctx.fillStyle = '#666'
-      ctx.font = '12px sans-serif'  // 从10px增加为12px，提高清晰度
-      ctx.textAlign = 'center'
-      
-      const barWidth = width / data.length
-      
-      // 根据数据长度和周期类型决定显示多少个时间标签
-      let step = 1
-      if (data.length > 20) {
-        step = Math.floor(data.length / 6) // 显示大约6个时间标签
-      } else if (data.length > 10) {
-        step = Math.floor(data.length / 4) // 显示大约4个时间标签
-      }
-      
-      // 绘制时间标签
-      for (let i = 0; i < data.length; i += step) {
-        const item = data[i]
-        if (!item || !item.date) continue
-        
-        const x = leftPadding + i * barWidth + barWidth / 2
-        
-        // 格式化日期显示
-        let dateStr = item.date
-        if (typeof dateStr === 'string') {
-          // 格式化日期字符串，如 "20231201" -> "12-01"
-          if (dateStr.length >= 8) {
-            const month = dateStr.substring(4, 6)
-            const day = dateStr.substring(6, 8)
-            dateStr = `${month}-${day}`
-          } else if (dateStr.length >= 6) {
-            const month = dateStr.substring(2, 4)
-            const day = dateStr.substring(4, 6)
-            dateStr = `${month}-${day}`
+      if (format === 'simple') {
+        // 简单格式：直接返回接口返回的日期字符串
+        return date.toString()
+      } else {
+        // 详细格式：用于十字线显示
+        // 处理字符串格式的日期
+        if (typeof date === 'string') {
+          // 如果是 "20250726" 格式（8位）
+          if (date.length === 8 && /^\d{8}$/.test(date)) {
+            const year = date.substring(0, 4)
+            const month = date.substring(4, 6)
+            const day = date.substring(6, 8)
+            return `${year}-${month}-${day}`
+          }
+          // 如果是 "2025-07-26" 格式，直接返回
+          if (date.includes('-')) {
+            return date
           }
         }
         
-        // 第一个和最后一个标签的特殊处理
-        if (i === 0) {
-          ctx.textAlign = 'left'
-          ctx.fillText(dateStr, leftPadding + 2, yPosition)
-        } else if (i >= data.length - step) {
-          ctx.textAlign = 'right'
-          ctx.fillText(dateStr, leftPadding + width - 2, yPosition)
-        } else {
-          ctx.textAlign = 'center'
-          ctx.fillText(dateStr, x, yPosition)
+        // 处理数字格式的日期
+        if (typeof date === 'number') {
+          const dateStr = date.toString()
+          if (dateStr.length === 8) {
+            const year = dateStr.substring(0, 4)
+            const month = dateStr.substring(4, 6)
+            const day = dateStr.substring(6, 8)
+            return `${year}-${month}-${day}`
+          }
         }
+        
+        return date.toString()
       }
     },
-
+    
     // 绘制时间轴标签
     drawTimeLabels(ctx, data, leftPadding, topPadding, width, height) {
       if (!data || data.length === 0) return
@@ -1954,19 +1932,9 @@ export default {
         return
       }
       
-      // 计算图表区域
-      const leftPadding = CHART_CONFIG.PADDING.LEFT  // 使用配置的左边距
-      const rightPadding = this.getRightPadding()  // 使用动态右边距
-      const topPadding = CHART_CONFIG.PADDING.TOP
-      const chartWidth = this.canvasWidth - leftPadding - rightPadding
-      let bottomPadding = 40
-      if (this.currentPeriod !== 'minute') {
-        const volumeChartHeight = 35
-        const volumeGap = 20
-        const extraSpace = 10
-        bottomPadding = volumeGap + volumeChartHeight + extraSpace
-      }
-      const mainChartHeight = this.canvasHeight - topPadding - bottomPadding
+      // 使用统一的布局计算
+      const layout = this.calculateChartLayout()
+      const { leftPadding, topPadding, chartWidth, mainChartHeight } = layout
       
       // 检查触摸点是否在图表区域内
       if (touchX < leftPadding || touchX > leftPadding + chartWidth || 
@@ -2034,16 +2002,9 @@ export default {
     updateCrosshairY() {
       if (!this.crosshairData) return
       
-      const leftPadding = CHART_CONFIG.PADDING.LEFT  // 使用配置的左边距
-      const topPadding = CHART_CONFIG.PADDING.TOP
-      let bottomPadding = 40
-      if (this.currentPeriod !== 'minute') {
-        const volumeChartHeight = 35
-        const volumeGap = 20
-        const extraSpace = 10
-        bottomPadding = volumeGap + volumeChartHeight + extraSpace
-      }
-      const mainChartHeight = this.canvasHeight - topPadding - bottomPadding
+      // 使用统一的布局计算
+      const layout = this.calculateChartLayout()
+      const { topPadding, mainChartHeight } = layout
       
       // 获取可见数据
       const endIndex = this.klineData.length
@@ -2082,143 +2043,6 @@ export default {
     },
     
     
-    // 单次绘制图表和十字线
-    async drawChartAndCrosshairOnce() {
-      if (this.isDrawing || !this.klineData.length || !this.canvasWidth) {
-        return
-      }
-      
-      this.isDrawing = true
-      
-      try {
-        const canvasInfo = await this.getCanvasContext()
-        if (!canvasInfo) {
-          return
-        }
-        
-        const { ctx } = canvasInfo
-        
-        ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight)
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight)
-        
-        const leftPadding = 15  // 与其他方法保持一致，确保十字线对齐
-        const rightPadding = 5  // 与其他方法保持一致
-        const topPadding = CHART_CONFIG.PADDING.TOP
-        
-        let bottomPadding = 40
-        let volumeChartHeight = 0
-        let volumeChartTop = 0
-        
-        if (this.currentPeriod !== 'minute') {
-          volumeChartHeight = 35
-          const volumeGap = 20
-          const extraSpace = 10
-          bottomPadding = volumeGap + volumeChartHeight + extraSpace
-          volumeChartTop = topPadding + (this.canvasHeight - topPadding - bottomPadding) + volumeGap
-        }
-        
-        const chartWidth = this.canvasWidth - leftPadding - rightPadding
-        const mainChartHeight = this.canvasHeight - topPadding - bottomPadding
-        
-        const endIndex = this.klineData.length
-        let startIndex, visibleData
-        
-        if (this.currentPeriod === 'minute') {
-          startIndex = 0
-          visibleData = this.klineData
-        } else {
-          const visibleCount = this.getVisibleCount()
-          startIndex = Math.max(0, endIndex - visibleCount)
-          visibleData = this.klineData.slice(startIndex, endIndex)
-        }
-        
-        if (!visibleData.length) {
-          ctx.fillStyle = '#999999'
-          ctx.font = '16px sans-serif'
-          ctx.textAlign = 'center'
-          ctx.fillText('暂无K线数据', this.canvasWidth / 2, this.canvasHeight / 2)
-          return
-        }
-        
-        let minPrice = Infinity, maxPrice = -Infinity
-        
-        if (this.currentPeriod === 'minute') {
-          visibleData.forEach(item => {
-            minPrice = Math.min(minPrice, item.price)
-            maxPrice = Math.max(maxPrice, item.price)
-          })
-        } else {
-          visibleData.forEach(item => {
-            minPrice = Math.min(minPrice, item.low)
-            maxPrice = Math.max(maxPrice, item.high)
-          })
-        }
-        
-        const priceRange = maxPrice - minPrice
-        const pricePadding = priceRange * 0.1
-        minPrice -= pricePadding
-        maxPrice += pricePadding
-        
-        // 绘制背景网格
-        this.drawGrid(ctx, leftPadding, topPadding, chartWidth, mainChartHeight, minPrice, maxPrice)
-        
-        if (this.currentPeriod === 'minute') {
-          this.drawMinuteLine(ctx, visibleData, leftPadding, topPadding, chartWidth, mainChartHeight, minPrice, maxPrice)
-        } else {
-          this.drawKlines(ctx, visibleData, leftPadding, topPadding, chartWidth, mainChartHeight, minPrice, maxPrice)
-          this.drawSeparatorLine(ctx, leftPadding, topPadding + mainChartHeight + 10, chartWidth)
-          // 在K线和成交量之间绘制日期标签，上移5px避免遮挡成交量图
-          this.drawKlineDateLabels(ctx, visibleData, leftPadding, topPadding + mainChartHeight + 25, chartWidth)
-          this.drawVolumeChart(ctx, visibleData, leftPadding, volumeChartTop, chartWidth, volumeChartHeight)
-        }
-        
-        this.drawPriceLabels(ctx, leftPadding, topPadding, mainChartHeight, minPrice, maxPrice)
-        
-        // 如果需要显示十字线，在同一个上下文中绘制
-        if (this.showCrosshair && this.crosshairX && this.crosshairY) {
-          
-          ctx.strokeStyle = CHART_CONFIG.COLORS.CROSSHAIR
-          ctx.lineWidth = 1
-          ctx.setLineDash([5, 5])
-          
-          // 绘制垂直线
-          ctx.beginPath()
-          ctx.moveTo(this.crosshairX, topPadding)
-          ctx.lineTo(this.crosshairX, topPadding + mainChartHeight)
-          ctx.stroke()
-          
-          // 绘制水平线
-          ctx.beginPath()
-          ctx.moveTo(leftPadding, this.crosshairY)
-          ctx.lineTo(leftPadding + chartWidth, this.crosshairY)
-          ctx.stroke()
-          
-          ctx.setLineDash([])
-          
-          // 绘制交叉点
-          ctx.fillStyle = CHART_CONFIG.COLORS.CROSSHAIR
-          ctx.beginPath()
-          ctx.arc(this.crosshairX, this.crosshairY, CHART_CONFIG.INTERACTION.CROSSHAIR_RADIUS, 0, 2 * Math.PI)
-          ctx.fill()
-          
-          // 绘制十字线标签
-          this.drawCrosshairLabels(ctx, leftPadding, rightPadding, topPadding, chartWidth, mainChartHeight)
-        }
-        
-        // Canvas 2D绘制是立即的，不需要调用draw()
-        
-        // 更新绘制状态
-        this.lastDrawnDataLength = this.klineData.length
-        this.lastDrawnPeriod = this.currentPeriod
-        
-      } catch (error) {
-        console.error('绘制图表失败:', error)
-      } finally {
-        this.isDrawing = false
-      }
-    },
-
     // 绘制十字线标签
     drawCrosshairLabels(ctx, leftPadding, rightPadding, topPadding, chartWidth, mainChartHeight) {
       // 计算当前价格
@@ -2263,302 +2087,6 @@ export default {
       
       // Canvas 2D绘制是立即的，不需要调用draw()
     },
-
-    // 绘制带十字线的图表
-    drawChartWithCrosshair() {
-      // 防止重复调用 - 添加关键的防护检查
-      if (this.isDrawing) {
-        return
-      }
-      
-      // 检查数据是否已变化，避免无效重复绘制
-      if (this.lastDrawnDataLength === this.klineData.length && 
-          this.lastDrawnPeriod === this.currentPeriod && 
-          this.klineData.length > 0) {
-        return
-      }
-      
-      // 如果需要显示十字线，在绘制完普通图表后立即绘制十字线
-      if (this.showCrosshair) {
-        // 使用安全绘制方法，避免循环调用
-        this.drawChartSafely()
-      } else {
-        // 只绘制普通图表
-        this.drawChart()
-      }
-    },
-    
-    // 同时绘制图表和十字线
-    async drawChartAndCrosshair() {
-      // 防止重复绘制
-      if (this.isDrawing) {
-        return
-      }
-      
-      // 无论是否显示十字线，都要检查数据变化，避免无效重复绘制
-      if (this.lastDrawnDataLength === this.klineData.length && 
-          this.lastDrawnPeriod === this.currentPeriod && 
-          this.klineData.length > 0) {
-        return
-      }
-      
-      if (!this.klineData.length) {
-        return
-      }
-      
-      if (!this.canvasWidth) {
-        return
-      }
-      
-      this.isDrawing = true
-      
-      try {
-        // 获取传统Canvas上下文
-        const canvasInfo = await this.getCanvasContext()
-        if (!canvasInfo) {
-          console.error('无法获取Canvas上下文')
-          this.errorMessage = '画布初始化失败'
-          return
-        }
-        
-        const { ctx } = canvasInfo
-        
-        // 直接使用 Canvas 2D API，不需要适配层
-      // 设置画布尺寸
-      ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight)
-      
-      // 设置画布背景色
-      ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight)
-      
-      // 计算绘制参数
-      const leftPadding = CHART_CONFIG.PADDING.LEFT  // 使用配置的左边距
-      const rightPadding = this.getRightPadding()  // 使用动态右边距
-      const topPadding = CHART_CONFIG.PADDING.TOP
-      
-      // 动态计算底部空间
-      let bottomPadding = 40 // 分时图的底部空间（时间标签）
-      let volumeChartHeight = 0
-      let volumeChartTop = 0
-      
-      if (this.currentPeriod !== 'minute') {
-        // K线图需要额外空间给成交量图（移除了时间标签空间）
-        volumeChartHeight = 35
-        const volumeGap = 20 // K线图和成交量图间隔
-        const extraSpace = 10 // 少量额外空间
-        bottomPadding = volumeGap + volumeChartHeight + extraSpace
-        volumeChartTop = topPadding + (this.canvasHeight - topPadding - bottomPadding) + volumeGap
-      }
-      
-      const chartWidth = this.canvasWidth - leftPadding - rightPadding
-      const mainChartHeight = this.canvasHeight - topPadding - bottomPadding
-      
-      // 获取可见数据
-      const endIndex = this.klineData.length
-      let startIndex, visibleData
-      
-      if (this.currentPeriod === 'minute') {
-        // 分时图显示全部数据
-        startIndex = 0
-        visibleData = this.klineData
-      } else {
-        // K线图使用动态可见数量限制
-        const visibleCount = this.getVisibleCount()
-        startIndex = Math.max(0, endIndex - visibleCount)
-        visibleData = this.klineData.slice(startIndex, endIndex)
-      }
-      
-      if (!visibleData.length) {
-        ctx.fillStyle = '#999999'
-        ctx.font = '16px sans-serif'
-        ctx.textAlign = 'center'
-        ctx.fillText('暂无K线数据', this.canvasWidth / 2, this.canvasHeight / 2)
-        // Canvas 2D绘制是立即的，不需要调用draw()
-        return
-      }
-      
-      // 计算价格范围
-      let minPrice = Infinity, maxPrice = -Infinity
-      
-      if (this.currentPeriod === 'minute') {
-        visibleData.forEach(item => {
-          minPrice = Math.min(minPrice, item.price)
-          maxPrice = Math.max(maxPrice, item.price)
-        })
-      } else {
-        visibleData.forEach(item => {
-          minPrice = Math.min(minPrice, item.low)
-          maxPrice = Math.max(maxPrice, item.high)
-        })
-      }
-      
-      const priceRange = maxPrice - minPrice
-      const pricePadding = priceRange * 0.1
-      minPrice -= pricePadding
-      maxPrice += pricePadding
-      
-      // 绘制背景网格
-      this.drawGrid(ctx, leftPadding, topPadding, chartWidth, mainChartHeight, minPrice, maxPrice)
-      
-      if (this.currentPeriod === 'minute') {
-        this.drawMinuteLine(ctx, visibleData, leftPadding, topPadding, chartWidth, mainChartHeight, minPrice, maxPrice)
-      } else {
-        this.drawKlines(ctx, visibleData, leftPadding, topPadding, chartWidth, mainChartHeight, minPrice, maxPrice)
-        this.drawSeparatorLine(ctx, leftPadding, topPadding + mainChartHeight + 10, chartWidth)
-        this.drawVolumeChart(ctx, visibleData, leftPadding, volumeChartTop, chartWidth, volumeChartHeight)
-        // 移除K线时间标签显示
-        // this.drawKlineTimeLabels(ctx, visibleData, leftPadding, topPadding + mainChartHeight + volumeChartHeight + 30, chartWidth)
-      }
-      
-      this.drawPriceLabels(ctx, leftPadding, topPadding, mainChartHeight, minPrice, maxPrice)
-      
-      // 如果需要显示十字线，在同一个上下文中绘制
-      if (this.showCrosshair && this.crosshairX && this.crosshairY) {
-        ctx.strokeStyle = '#666666'
-        ctx.lineWidth = 1
-        ctx.setLineDash([5, 5])
-        
-        // 绘制垂直线
-        ctx.beginPath()
-        ctx.moveTo(this.crosshairX, topPadding)
-        ctx.lineTo(this.crosshairX, topPadding + mainChartHeight)
-        ctx.stroke()
-        
-        // 绘制水平线
-        ctx.beginPath()
-        ctx.moveTo(leftPadding, this.crosshairY)
-        ctx.lineTo(leftPadding + chartWidth, this.crosshairY)
-        ctx.stroke()
-        
-        ctx.setLineDash([])
-        
-        // 绘制交叉点
-        ctx.fillStyle = '#666666'
-        ctx.beginPath()
-        ctx.arc(this.crosshairX, this.crosshairY, 3, 0, 2 * Math.PI)
-        ctx.fill()
-        
-        // 绘制价格标签
-        if (this.crosshairData) {
-          let currentPrice = 0
-          if (this.currentPeriod === 'minute') {
-            currentPrice = this.crosshairData.price || 0
-          } else {
-            currentPrice = this.crosshairData.close || 0
-          }
-          
-          const priceText = this.formatPrice(currentPrice)
-          ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
-          ctx.fillRect(5, this.crosshairY - 10, 50, 20)
-          ctx.fillStyle = '#ffffff'
-          ctx.font = '12px sans-serif'  // 从10px增加为12px，提高清晰度
-          ctx.textAlign = 'center'
-          ctx.fillText(priceText, 30, this.crosshairY + 3)
-          
-          ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
-          ctx.fillRect(leftPadding + chartWidth + 5, this.crosshairY - 10, 50, 20)
-          ctx.fillStyle = '#ffffff'
-          ctx.fillText(priceText, leftPadding + chartWidth + 30, this.crosshairY + 3)
-        }
-      }
-      
-      // Canvas 2D绘制是立即的，不需要调用draw()
-      
-      // 绘制完成，重置状态
-      this.lastDrawnDataLength = this.klineData.length
-      this.lastDrawnPeriod = this.currentPeriod
-      this.isDrawing = false
-    } catch (error) {
-      console.error('绘制图表失败:', error)
-      this.isDrawing = false
-    }
-    },
-    
-    // 绘制十字线
-    async drawCrosshair() {
-      // 获取传统Canvas上下文
-      const canvasInfo = await this.getCanvasContext()
-      if (!canvasInfo) {
-        return
-      }
-      
-      const { ctx } = canvasInfo
-      
-      // 直接使用 Canvas 2D API
-      
-      const leftPadding = CHART_CONFIG.PADDING.LEFT  // 使用配置的左边距
-      const rightPadding = this.getRightPadding()  // 使用动态右边距
-      const topPadding = CHART_CONFIG.PADDING.TOP
-      const chartWidth = this.canvasWidth - leftPadding - rightPadding
-      let bottomPadding = 60
-      if (this.currentPeriod !== 'minute') {
-        bottomPadding = 140
-      }
-      const totalAvailableHeight = this.canvasHeight - topPadding - bottomPadding
-      let mainChartHeight = totalAvailableHeight
-      
-      // 设置十字线样式
-      ctx.strokeStyle = '#666666'
-      ctx.lineWidth = 1
-      ctx.setLineDash([5, 5])
-      
-      // 绘制垂直线
-      ctx.beginPath()
-      ctx.moveTo(this.crosshairX, topPadding)
-      ctx.lineTo(this.crosshairX, topPadding + mainChartHeight)
-      ctx.stroke()
-      
-      // 绘制水平线
-      ctx.beginPath()
-      ctx.moveTo(leftPadding, this.crosshairY)
-      ctx.lineTo(leftPadding + chartWidth, this.crosshairY)
-      ctx.stroke()
-      
-      // 重置线条样式
-      ctx.setLineDash([])
-      
-      // 在十字线交叉点绘制小圆点
-      ctx.fillStyle = '#666666'
-      ctx.beginPath()
-      ctx.arc(this.crosshairX, this.crosshairY, 3, 0, 2 * Math.PI)
-      ctx.fill()
-      
-      // 在十字线两端显示价格信息
-      if (this.crosshairData) {
-        this.drawCrosshairLabels(ctx, leftPadding, rightPadding, topPadding, chartWidth, mainChartHeight)
-      }
-      
-      // Canvas 2D绘制是立即的，不需要调用draw()
-    },
-    
-    // 绘制十字线标签
-    drawCrosshairLabels(ctx, leftPadding, rightPadding, topPadding, chartWidth, mainChartHeight) {
-      // 计算当前价格
-      let currentPrice = 0
-      if (this.currentPeriod === 'minute') {
-        currentPrice = this.crosshairData.price || 0
-      } else {
-        currentPrice = this.crosshairData.close || 0
-      }
-      
-      // 在左侧显示价格
-      const priceText = this.formatPrice(currentPrice)
-      ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
-      ctx.fillRect(5, this.crosshairY - 10, 50, 20)
-      ctx.fillStyle = '#ffffff'
-      ctx.font = '12px sans-serif'  // 从10px增加为12px，提高清晰度
-      ctx.textAlign = 'center'
-      ctx.fillText(priceText, 30, this.crosshairY + 3)
-      
-      // 在右侧也显示价格
-      ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
-      ctx.fillRect(leftPadding + chartWidth + 5, this.crosshairY - 10, 50, 20)
-      ctx.fillStyle = '#ffffff'
-      ctx.fillText(priceText, leftPadding + chartWidth + 30, this.crosshairY + 3)
-      
-      // Canvas 2D绘制是立即的，不需要调用draw()
-    },
-    
     // 格式化十字线时间显示
     formatCrosshairTime(time) {
       if (!time) return '--'
@@ -2566,39 +2094,6 @@ export default {
         return time.substring(0, 2) + ':' + time.substring(2, 4)
       }
       return time
-    },
-    
-    // 格式化十字线日期显示
-    formatCrosshairDate(date) {
-      if (!date) return '--'
-      
-      // 处理字符串格式的日期
-      if (typeof date === 'string') {
-        // 如果是 "20250726" 格式（8位）
-        if (date.length === 8 && /^\d{8}$/.test(date)) {
-          const year = date.substring(0, 4)
-          const month = date.substring(4, 6)
-          const day = date.substring(6, 8)
-          return `${year}-${month}-${day}`
-        }
-        // 如果是 "2025-07-26" 格式，直接返回
-        if (date.includes('-')) {
-          return date
-        }
-      }
-      
-      // 处理数字格式的日期
-      if (typeof date === 'number') {
-        const dateStr = date.toString()
-        if (dateStr.length === 8) {
-          const year = dateStr.substring(0, 4)
-          const month = dateStr.substring(4, 6)
-          const day = dateStr.substring(6, 8)
-          return `${year}-${month}-${day}`
-        }
-      }
-      
-      return date.toString()
     },
     
     // 格式化分时图价格变化
@@ -2631,16 +2126,12 @@ export default {
     
     // 检查点击位置是否在可交互的图表区域内
     isPointInChartArea(x, y) {
-      const leftPadding = CHART_CONFIG.PADDING.LEFT  // 使用配置的左边距
-      const rightPadding = this.getRightPadding()  // 使用动态右边距
-      const topPadding = CHART_CONFIG.PADDING.TOP
-      const chartWidth = this.canvasWidth - leftPadding - rightPadding
-      let bottomPadding = CHART_CONFIG.PADDING.BOTTOM
+      // 使用统一的布局计算
+      const layout = this.calculateChartLayout()
+      const { leftPadding, topPadding, chartWidth, mainChartHeight, volumeChartHeight } = layout
       
       // 对于分时图，只检查主图表区域
       if (this.currentPeriod === 'minute') {
-        const mainChartHeight = this.canvasHeight - topPadding - bottomPadding
-        
         const inArea = x >= leftPadding && 
                x <= leftPadding + chartWidth && 
                y >= topPadding && 
@@ -2649,11 +2140,7 @@ export default {
         return inArea
       } else {
         // 对于K线图，包括主图表区域和成交量图区域
-        const volumeChartHeight = CHART_CONFIG.PADDING.VOLUME_HEIGHT
         const volumeGap = CHART_CONFIG.PADDING.VOLUME_GAP
-        const extraSpace = CHART_CONFIG.PADDING.EXTRA_SPACE
-        bottomPadding = volumeGap + volumeChartHeight + extraSpace
-        const mainChartHeight = this.canvasHeight - topPadding - bottomPadding
         const totalInteractiveHeight = mainChartHeight + volumeGap + volumeChartHeight
         
         const inArea = x >= leftPadding && 
@@ -2669,7 +2156,7 @@ export default {
     getPriceChangeClass(currentPrice, basePrice) {
       if (arguments.length === 1) {
         // 分时图模式，需要与昨收价比较
-        const yesterdayClose = this.yesterdayClosePrice || (this.klineData.length > 0 ? this.klineData[0].open : 0)
+        const yesterdayClose = this.klineData.length > 0 ? this.klineData[0].price : 0
         if (!currentPrice || !yesterdayClose) return ''
         if (currentPrice > yesterdayClose) return 'price-up'
         if (currentPrice < yesterdayClose) return 'price-down'
