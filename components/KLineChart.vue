@@ -66,6 +66,65 @@
 <script>
 import StockApi from '@/utils/stockApi.js'
 
+// K线图配置常量
+const CHART_CONFIG = {
+  // 布局配置
+  PADDING: {
+    LEFT: 20,      // 左边距，为价格标签预留足够空间
+    RIGHT_MINUTE: 20,  // 分时图右边距，为涨跌幅标签预留足够空间
+    RIGHT_KLINE: 5,    // K线图右边距
+    TOP: 10,       // 顶部边距
+    BOTTOM: 5,    // 分时图底部边距
+    VOLUME_GAP: 20, // K线图和成交量图间隔
+    VOLUME_HEIGHT: 35, // 成交量图高度
+    EXTRA_SPACE: 0    // 额外空间
+  },
+  
+  // 颜色配置
+  COLORS: {
+    UP: '#FF4444',        // 涨（红色）
+    DOWN: '#00AA44',      // 跌（绿色）
+    NEUTRAL: '#cccccc',   // 中性（灰色）
+    GRID: 'rgba(160, 160, 160, 0.3)', // 网格线
+    CROSSHAIR: '#666666', // 十字线
+    YESTERDAY_CLOSE: '#999999' // 昨收价线
+  },
+  
+  // 性能配置
+  PERFORMANCE: {
+    DRAW_THROTTLE_DELAY: 33,  // 绘制节流延迟（约30fps）
+    MINUTE_REFRESH_INTERVAL: 3000, // 分时图刷新间隔（3秒）
+    MAX_RETRY_COUNT: 3,       // 最大重试次数
+    CANVAS_INIT_RETRY_DELAY: 200, // Canvas初始化重试延迟
+    ANIMATION_FRAME_FALLBACK: 16  // requestAnimationFrame降级延迟
+  },
+  
+  // 缩放配置
+  ZOOM: {
+    MIN_VISIBLE_COUNT: 30,    // 最小显示数量
+    MAX_VISIBLE_COUNT: 200,   // 最大显示数量
+    WHEEL_STEP: 3,            // 滚轮缩放步长
+    TOUCH_SENSITIVITY: 0.5,   // 触摸缩放敏感度
+    THROTTLE_DELAY: 16        // 缩放节流延迟
+  },
+  
+  // 交互配置
+  INTERACTION: {
+    DOUBLE_CLICK_THRESHOLD: 400, // 双击检测阈值（毫秒）
+    DRAG_THRESHOLD: 5,           // 拖拽检测阈值（像素）
+    CROSSHAIR_RADIUS: 3,         // 十字线交叉点半径
+    CROSSHAIR_DRAG_THROTTLE: 50  // 十字线拖拽节流延迟（毫秒）
+  },
+  
+  // 字体配置
+  FONTS: {
+    PRICE_LABEL: '11px sans-serif',
+    TIME_LABEL: '12px sans-serif',
+    CROSSHAIR_LABEL: '12px sans-serif',
+    VOLUME_LABEL: '11px sans-serif'
+  }
+}
+
 export default {
   name: "KLineChart",
   props: {
@@ -131,7 +190,7 @@ export default {
       ctx2D: null,
       // 防重复绘制的优化
       lastDrawTimestamp: 0,
-      drawThrottleDelay: 30, // 调整节流延迟到30ms以平衡性能和流畅度
+      drawThrottleDelay: CHART_CONFIG.PERFORMANCE.DRAW_THROTTLE_DELAY, // 统一节流延迟
       // 绘制优化已简化，移除复杂的key检查
       // Canvas初始化状态
       canvasInitializing: false, // 新增：防止重复初始化
@@ -146,14 +205,20 @@ export default {
       zoomStartDistance: 0, // 缩放开始时的双指距离
       zoomStartVisibleCount: 50, // 缩放开始时的可见数量
       zoomThrottleTimer: null, // 缩放节流定时器
+      crosshairDragThrottleTimer: null, // 十字线拖拽节流定时器
       // 缩放边界设置
-      minVisibleCount: 30, // 最小显示数量（动态设置为当前周期的默认值）
-      maxVisibleCount: 200, // 最大显示数量
+      minVisibleCount: CHART_CONFIG.ZOOM.MIN_VISIBLE_COUNT, // 最小显示数量
+      maxVisibleCount: CHART_CONFIG.ZOOM.MAX_VISIBLE_COUNT, // 最大显示数量
       // 缩放敏感度设置
-      wheelZoomStep: 3, // 滚轮每次缩放的步长
-      touchZoomSensitivity: 0.5, // 触摸缩放敏感度
+      wheelZoomStep: CHART_CONFIG.ZOOM.WHEEL_STEP, // 滚轮每次缩放的步长
+      touchZoomSensitivity: CHART_CONFIG.ZOOM.TOUCH_SENSITIVITY, // 触摸缩放敏感度
       lastWheelDirection: 1, // 用于交替滚轮方向的变量
     }
+  },
+  
+  // 创建统一的动画帧调度器
+  created() {
+    this.animationScheduler = this.createAnimationScheduler()
   },
   mounted() {
     if (!this.stockCode) {
@@ -193,6 +258,11 @@ export default {
       clearTimeout(this.zoomThrottleTimer)
       this.zoomThrottleTimer = null
     }
+    // 清理十字线拖拽节流定时器
+    if (this.crosshairDragThrottleTimer) {
+      clearTimeout(this.crosshairDragThrottleTimer)
+      this.crosshairDragThrottleTimer = null
+    }
   },
   beforeUnmount() {
     // Vue 3 兼容性
@@ -209,6 +279,11 @@ export default {
     if (this.zoomThrottleTimer) {
       clearTimeout(this.zoomThrottleTimer)
       this.zoomThrottleTimer = null
+    }
+    // 清理十字线拖拽节流定时器
+    if (this.crosshairDragThrottleTimer) {
+      clearTimeout(this.crosshairDragThrottleTimer)
+      this.crosshairDragThrottleTimer = null
     }
   },
   deactivated() {
@@ -240,6 +315,24 @@ export default {
     }
   },
   methods: {
+    // 获取右边距（根据图表类型动态调整）
+    getRightPadding() {
+      return this.currentPeriod === 'minute' ? CHART_CONFIG.PADDING.RIGHT_MINUTE : CHART_CONFIG.PADDING.RIGHT_KLINE
+    },
+    
+    // 创建统一的动画帧调度器
+    createAnimationScheduler() {
+      // 优先级：uni.requestAnimationFrame > wx.requestAnimationFrame > setTimeout
+      if (typeof uni !== 'undefined' && uni.requestAnimationFrame) {
+        return uni.requestAnimationFrame
+      }
+      if (typeof wx !== 'undefined' && wx.requestAnimationFrame) {
+        return wx.requestAnimationFrame
+      }
+      // 最终降级到setTimeout
+      return (callback) => setTimeout(callback, CHART_CONFIG.PERFORMANCE.ANIMATION_FRAME_FALLBACK)
+    },
+    
     // 鼠标滚轮缩放事件处理
     onWheel(e) {
       // 强制阻止页面滚动
@@ -361,7 +454,7 @@ export default {
           if (!this.isDrawing && this.klineData.length > 0) {
             this.drawChartSafely()
           }
-        }, 16)
+        }, CHART_CONFIG.ZOOM.THROTTLE_DELAY)
       }
     },
     
@@ -383,18 +476,28 @@ export default {
       return touches && touches.length === 2
     },
     
-    // 获取Canvas 2D上下文
+    // 获取Canvas 2D上下文（优化缓存）
     async getCanvasContext() {
       if (!this.canvasWidth || !this.canvasHeight) {
         return null
       }
       
+      // 如果已有有效的上下文，直接返回
       if (this.canvas2D && this.ctx2D) {
-        return {
-          ctx: this.ctx2D,
-          canvas: this.canvas2D,
-          width: this.canvasWidth,
-          height: this.canvasHeight
+        // 验证上下文是否仍然有效
+        try {
+          this.ctx2D.save()
+          this.ctx2D.restore()
+          return {
+            ctx: this.ctx2D,
+            canvas: this.canvas2D,
+            width: this.canvasWidth,
+            height: this.canvasHeight
+          }
+        } catch (error) {
+          // 上下文已失效，需要重新初始化
+          this.canvas2D = null
+          this.ctx2D = null
         }
       }
       
@@ -407,10 +510,10 @@ export default {
       }
     },
     
-    // 初始化Canvas 2D API（带重试机制）
+    // 初始化Canvas 2D API（带重试机制，使用配置常量）
     async initCanvas2D(retryCount = 0) {
-      const maxRetries = 3
-      const retryDelay = 200 + (retryCount * 100) // 递增延迟
+      const maxRetries = CHART_CONFIG.PERFORMANCE.MAX_RETRY_COUNT
+      const retryDelay = CHART_CONFIG.PERFORMANCE.CANVAS_INIT_RETRY_DELAY + (retryCount * 100) // 递增延迟
       
       return new Promise((resolve, reject) => {
         this.$nextTick(() => {
@@ -477,7 +580,7 @@ export default {
       })
     },
     
-    // 节流绘制方法
+    // 节流绘制方法（使用统一动画调度器）
     throttledDraw() {
       const now = Date.now()
       if (now - this.lastDrawTimestamp < this.drawThrottleDelay) {
@@ -486,9 +589,7 @@ export default {
       this.lastDrawTimestamp = now
       
       if (!this.isDrawing) {
-        // 微信小程序环境使用相应的API
-        const raf = uni.requestAnimationFrame || ((callback) => setTimeout(callback, 16));
-        raf(() => {
+        this.animationScheduler(() => {
           this.drawChart()
         })
       }
@@ -546,18 +647,18 @@ export default {
     
     // 计算最优画布高度
     calculateOptimalHeight() {
-      const topPadding = 20
+      const topPadding = CHART_CONFIG.PADDING.TOP
       const mainChartHeight = 220 // 主图表固定高度
       
       if (this.currentPeriod === 'minute') {
         // 分时图：主图 + 时间标签空间
-        const bottomPadding = 40
+        const bottomPadding = CHART_CONFIG.PADDING.BOTTOM
         return topPadding + mainChartHeight + bottomPadding
       } else {
         // K线图：主图 + 成交量图（日期标签在中间，不需要额外空间）
-        const volumeChartHeight = 35
-        const volumeGap = 20
-        const extraSpace = 10
+        const volumeChartHeight = CHART_CONFIG.PADDING.VOLUME_HEIGHT
+        const volumeGap = CHART_CONFIG.PADDING.VOLUME_GAP
+        const extraSpace = CHART_CONFIG.PADDING.EXTRA_SPACE
         const bottomPadding = volumeGap + volumeChartHeight + extraSpace
         return topPadding + mainChartHeight + bottomPadding
       }
@@ -814,7 +915,7 @@ export default {
           break
         case 'month':
           this.currentVisibleCount = 30
-          this.minVisibleCount = 30  // 最少显示30根月K线
+          this.minVisibleCount = CHART_CONFIG.ZOOM.MIN_VISIBLE_COUNT  // 最少显示30根月K线
           break
         default:
           this.currentVisibleCount = 50
@@ -877,7 +978,6 @@ export default {
     // 绘制图表
     async drawChart() {
       if (this.isDrawing || !this.klineData.length || !this.canvasWidth) {
-        // 绘制条件不满足
         return
       }
       
@@ -894,20 +994,20 @@ export default {
         
         ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight)
         
-        const leftPadding = 60  // 进一步增加左边距为价格标签预留更多空间
-        const rightPadding = 50  // 右边距保持不变
-        const topPadding = 20
+        const leftPadding = CHART_CONFIG.PADDING.LEFT
+        const rightPadding = this.getRightPadding()
+        const topPadding = CHART_CONFIG.PADDING.TOP
         
         // 绘制参数调试
         
-        let bottomPadding = 40
+        let bottomPadding = CHART_CONFIG.PADDING.BOTTOM
         let volumeChartHeight = 0
         let volumeChartTop = 0
         
         if (this.currentPeriod !== 'minute') {
-          volumeChartHeight = 35
-          const volumeGap = 20
-          const extraSpace = 10
+          volumeChartHeight = CHART_CONFIG.PADDING.VOLUME_HEIGHT
+          const volumeGap = CHART_CONFIG.PADDING.VOLUME_GAP
+          const extraSpace = CHART_CONFIG.PADDING.EXTRA_SPACE
           bottomPadding = volumeGap + volumeChartHeight + extraSpace
           volumeChartTop = topPadding + (this.canvasHeight - topPadding - bottomPadding) + volumeGap
         }
@@ -969,17 +1069,71 @@ export default {
         
         this.drawPriceLabels(ctx, leftPadding, topPadding, mainChartHeight, minPrice, maxPrice)
         
+        // 如果需要显示十字线，在同一个上下文中绘制
+        if (this.showCrosshair && this.crosshairX && this.crosshairY) {
+          
+          ctx.strokeStyle = CHART_CONFIG.COLORS.CROSSHAIR
+          ctx.lineWidth = 1
+          ctx.setLineDash([5, 5])
+          
+          // 绘制垂直线
+          ctx.beginPath()
+          ctx.moveTo(this.crosshairX, topPadding)
+          ctx.lineTo(this.crosshairX, topPadding + mainChartHeight)
+          ctx.stroke()
+          
+          // 绘制水平线
+          ctx.beginPath()
+          ctx.moveTo(leftPadding, this.crosshairY)
+          ctx.lineTo(leftPadding + chartWidth, this.crosshairY)
+          ctx.stroke()
+          
+          ctx.setLineDash([])
+          
+          // 绘制交叉点
+          ctx.fillStyle = CHART_CONFIG.COLORS.CROSSHAIR
+          ctx.beginPath()
+          ctx.arc(this.crosshairX, this.crosshairY, CHART_CONFIG.INTERACTION.CROSSHAIR_RADIUS, 0, 2 * Math.PI)
+          ctx.fill()
+          
+          // 绘制价格标签
+          if (this.crosshairData) {
+            let currentPrice = 0
+            if (this.currentPeriod === 'minute') {
+              currentPrice = this.crosshairData.price || 0
+            } else {
+              currentPrice = this.crosshairData.close || 0
+            }
+            
+            const priceText = this.formatPrice(currentPrice)
+            ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
+            ctx.fillRect(5, this.crosshairY - 10, 50, 20)
+            ctx.fillStyle = '#ffffff'
+            ctx.font = CHART_CONFIG.FONTS.CROSSHAIR_LABEL
+            ctx.textAlign = 'center'
+            ctx.fillText(priceText, 30, this.crosshairY + 3)
+            
+            ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
+            ctx.fillRect(leftPadding + chartWidth + 5, this.crosshairY - 10, 50, 20)
+            ctx.fillStyle = '#ffffff'
+            ctx.fillText(priceText, leftPadding + chartWidth + 30, this.crosshairY + 3)
+          }
+        } else {
+          // 十字线绘制条件不满足
+        }
+        
         this.lastDrawnDataLength = this.klineData.length
         this.lastDrawnPeriod = this.currentPeriod
-        this.isDrawing = false
       } catch (error) {
+        console.error('drawChart: 绘制出错:', error)
+      } finally {
         this.isDrawing = false
       }
     },
     
     // 绘制网格
     drawGrid(ctx, leftPadding, topPadding, width, height, minPrice, maxPrice) {
-      ctx.strokeStyle = 'rgba(160, 160, 160, 0.3)'  // 减少透明度，提高网格线可见性
+      ctx.strokeStyle = CHART_CONFIG.COLORS.GRID  // 使用配置的网格线颜色
       ctx.lineWidth = 0.8  // 增加线条粗细，确保清晰可见
       
       // 绘制水平网格线（价格线）- 与价格标签精确对应，9条线
@@ -1060,8 +1214,8 @@ export default {
       }
       
       // 优化：预计算颜色和样式
-      const upColor = '#FF4444'   // 红色 - 涨
-      const downColor = '#00AA44' // 绿色 - 跌
+      const upColor = CHART_CONFIG.COLORS.UP   // 红色 - 涨
+      const downColor = CHART_CONFIG.COLORS.DOWN // 绿色 - 跌
       const minRectWidth = Math.max(1, Math.min(8, barWidth * 0.7)) // 限制最小和最大宽度
       
       // 批量绘制影线 - 使用传统for循环替代forEach提高性能
@@ -1142,7 +1296,7 @@ export default {
         yesterdayCloseY = topPadding + height - ((yesterdayClose - minPrice) / priceRange) * height
         
         // 绘制昨收价基准线（虚线）
-        ctx.strokeStyle = '#999999'
+        ctx.strokeStyle = CHART_CONFIG.COLORS.YESTERDAY_CLOSE
         ctx.lineWidth = 1
         ctx.setLineDash([5, 5])
         ctx.beginPath()
@@ -1167,7 +1321,7 @@ export default {
       // 根据价格相对昨收的位置决定颜色
       const currentPrice = data[data.length - 1].price
       const isUp = currentPrice >= yesterdayClose
-      const lineColor = isUp ? '#FF4444' : '#00AA44'
+      const lineColor = isUp ? CHART_CONFIG.COLORS.UP : CHART_CONFIG.COLORS.DOWN
       
       // 绘制背景填充区域
       if (linePath.length > 1) {
@@ -1254,9 +1408,9 @@ export default {
       if (maxVolume === 0) return
       
       // 预计算颜色
-      const upColor = '#FF4444'   // 红色（涨）
-      const downColor = '#00AA44' // 绿色（跌）
-      const neutralColor = '#cccccc' // 默认灰色
+      const upColor = CHART_CONFIG.COLORS.UP     // 红色（涨）
+      const downColor = CHART_CONFIG.COLORS.DOWN // 绿色（跌）
+      const neutralColor = CHART_CONFIG.COLORS.NEUTRAL // 默认灰色
       
       // 绘制成交量柱状图 - 使用传统for循环提高性能
       for (let i = 0; i < data.length; i++) {
@@ -1292,15 +1446,15 @@ export default {
       
       // 绘制成交量标签（在左侧显示最大成交量）
       ctx.fillStyle = '#666666'
-      ctx.font = '11px sans-serif'  // 从9px增加为11px，提高清晰度
+      ctx.font = CHART_CONFIG.FONTS.VOLUME_LABEL  // 使用配置的字体
       ctx.textAlign = 'right'
       
-      // 显示最大成交量 - 也向右移动10px保持对齐
+      // 显示最大成交量 - 优化位置，确保在边距内显示
       const maxVolumeStr = this.formatVolumeShort(maxVolume)
-      ctx.fillText(maxVolumeStr, leftPadding + 15, topPadding + 12)  // 从+5改为+15
+      ctx.fillText(maxVolumeStr, leftPadding - 5, topPadding + 12)  // 在左边距内显示
       
       // 显示0
-      ctx.fillText('0', leftPadding + 15, topPadding + height - 2)  // 从+5改为+15
+      ctx.fillText('0', leftPadding - 5, topPadding + height - 2)  // 在左边距内显示
     },
     
     // 格式化成交量显示（简短版本）
@@ -1321,7 +1475,7 @@ export default {
       if (!data || data.length === 0) return
       
       ctx.fillStyle = '#666666'
-      ctx.font = '12px sans-serif'
+      ctx.font = CHART_CONFIG.FONTS.TIME_LABEL
       ctx.textAlign = 'center'
       
       // 设置左右边距为20px
@@ -1562,7 +1716,7 @@ export default {
     // 绘制价格标签
     drawPriceLabels(ctx, leftPadding, topPadding, height, minPrice, maxPrice) {
       ctx.fillStyle = '#666666'
-      ctx.font = '11px sans-serif'  // 字体大小从10px增加到11px，提高清晰度
+      ctx.font = CHART_CONFIG.FONTS.PRICE_LABEL  // 使用配置的字体
       ctx.textAlign = 'right'
       
       // 绘制左侧价格标签 - 保持适中数量(9个)，不需要匹配所有网格线
@@ -1570,18 +1724,26 @@ export default {
         const price = minPrice + (maxPrice - minPrice) * (1 - i / 8)
         const y = topPadding + (height / 8) * i
         
-        // 价格标签向右移动，确保完全可见
+        // 价格标签位置优化，K线图继续向右移动10px
         if (i === 8) {
-          ctx.fillText(price.toFixed(2), leftPadding + 15, y - 8)  // 最底部标签上移一点
+          ctx.fillText(price.toFixed(2), leftPadding + 15, y - 8)  // 最底部标签上移一点，继续向右移动10px
         } else {
-          ctx.fillText(price.toFixed(2), leftPadding + 15, y + 3)
+          ctx.fillText(price.toFixed(2), leftPadding + 15, y + 3)  // 继续向右移动10px
         }
       }
       
       // 如果是分时图，在右侧显示涨跌幅百分比
       if (this.currentPeriod === 'minute' && this.klineData.length > 0) {
-        const yesterdayClose = this.klineData[0].price || 0
-        if (yesterdayClose) {
+        // 获取昨收价 - 通常分时图的第一个数据点或者单独的昨收价字段
+        let yesterdayClose = 0
+        if (this.klineData[0] && this.klineData[0].yesterdayClose) {
+          yesterdayClose = this.klineData[0].yesterdayClose
+        } else if (this.klineData[0] && this.klineData[0].price) {
+          // 如果没有昨收价字段，使用第一个价格作为基准
+          yesterdayClose = this.klineData[0].price
+        }
+        
+        if (yesterdayClose && yesterdayClose > 0) {
           ctx.textAlign = 'left'
           for (let i = 0; i <= 8; i++) {
             const price = minPrice + (maxPrice - minPrice) * (1 - i / 8)
@@ -1590,16 +1752,16 @@ export default {
             
             // 根据涨跌情况设置颜色
             if (change > 0) {
-              ctx.fillStyle = '#ff4949' // 红色表示上涨
+              ctx.fillStyle = CHART_CONFIG.COLORS.UP // 使用配置的上涨颜色
             } else if (change < 0) {
-              ctx.fillStyle = '#66cc66' // 绿色表示下跌
+              ctx.fillStyle = CHART_CONFIG.COLORS.DOWN // 使用配置的下跌颜色
             } else {
               ctx.fillStyle = '#666666' // 平盘显示灰色
             }
             
-            // 显示涨跌幅百分比 - 在右侧预留的空间内显示
+            // 显示涨跌幅百分比 - 分时图继续向左移动10px
             const changeText = change > 0 ? `+${change.toFixed(2)}%` : `${change.toFixed(2)}%`
-            ctx.fillText(changeText, this.canvasWidth - 45, y + 3)
+            ctx.fillText(changeText, this.canvasWidth - this.getRightPadding() - 15, y + 3)  // 继续向左移动10px
             
             // 重置颜色为默认值
             ctx.fillStyle = '#666666'
@@ -1632,8 +1794,15 @@ export default {
       // 单指操作（原有逻辑）
       if (e.touches.length === 1) {
         const touch = e.touches[0]
-        this.startX = touch.x
-        this.startY = touch.y
+        // 获取Canvas元素的边界矩形，计算相对坐标
+        const rect = e.currentTarget.getBoundingClientRect ? 
+                     e.currentTarget.getBoundingClientRect() : 
+                     { left: 0, top: 0 }
+        
+        // 计算相对于Canvas的坐标
+        this.startX = (touch.clientX || touch.x || 0) - rect.left
+        this.startY = (touch.clientY || touch.y || 0) - rect.top
+        
         this.isDragging = false
         this.isZooming = false
         
@@ -1674,7 +1843,7 @@ export default {
             if (!this.isDrawing && this.klineData.length > 0) {
               this.drawChartSafely()
             }
-          }, 16) // 约60fps
+          }, CHART_CONFIG.ZOOM.THROTTLE_DELAY) // 约60fps
         }
         
         return
@@ -1683,21 +1852,34 @@ export default {
       // 单指操作（原有逻辑）
       if (e.touches.length === 1 && !this.isZooming) {
         const touch = e.touches[0]
-        const deltaX = Math.abs(touch.x - this.startX)
-        const deltaY = Math.abs(touch.y - this.startY)
+        // 获取Canvas元素的边界矩形，计算相对坐标
+        const rect = e.currentTarget.getBoundingClientRect ? 
+                     e.currentTarget.getBoundingClientRect() : 
+                     { left: 0, top: 0 }
+        
+        const touchX = (touch.clientX || touch.x || 0) - rect.left
+        const touchY = (touch.clientY || touch.y || 0) - rect.top
+        const deltaX = Math.abs(touchX - this.startX)
+        const deltaY = Math.abs(touchY - this.startY)
         
         // 如果移动距离超过阈值，标记为拖拽
-        if (deltaX > 5 || deltaY > 5) {
+        if (deltaX > CHART_CONFIG.INTERACTION.DRAG_THRESHOLD || deltaY > CHART_CONFIG.INTERACTION.DRAG_THRESHOLD) {
           this.isDragging = true
         }
         
-        // 如果十字线已经显示且正在拖拽，更新十字线位置
+        // 如果十字线已经显示且正在拖拽，更新十字线位置（节流处理）
         if (this.showCrosshair && this.isDragging) {
-          // 微信小程序环境使用相应的API
-          const raf = uni.requestAnimationFrame || ((callback) => setTimeout(callback, 16));
-          raf(() => {
-            this.updateCrosshair(touch.x, touch.y)
-          })
+          // 清除之前的节流定时器
+          if (this.crosshairDragThrottleTimer) {
+            clearTimeout(this.crosshairDragThrottleTimer)
+          }
+          
+          // 节流处理十字线拖拽更新
+          this.crosshairDragThrottleTimer = setTimeout(() => {
+            this.animationScheduler(() => {
+              this.updateCrosshair(touchX, touchY)
+            })
+          }, CHART_CONFIG.INTERACTION.CROSSHAIR_DRAG_THROTTLE)
         }
       }
     },
@@ -1710,6 +1892,12 @@ export default {
         this.zoomThrottleTimer = null
       }
       
+      // 清除十字线拖拽节流定时器
+      if (this.crosshairDragThrottleTimer) {
+        clearTimeout(this.crosshairDragThrottleTimer)
+        this.crosshairDragThrottleTimer = null
+      }
+      
       // 如果是缩放操作结束
       if (this.isZooming) {
         this.isZooming = false
@@ -1719,13 +1907,12 @@ export default {
         return
       }
       
-      // 微信小程序环境使用相应的API
-      const raf = uni.requestAnimationFrame || ((callback) => setTimeout(callback, 16));
-      raf(() => {
+      // 微信小程序环境使用统一的动画调度器
+      this.animationScheduler(() => {
         // 只有在点击（非拖拽）时才处理十字线
         if (!this.isDragging) {
           const currentTime = Date.now()
-          const isDoubleClick = this.lastTapTime > 0 && (currentTime - this.lastTapTime < 400) // 400ms内的连续点击认为是双击
+          const isDoubleClick = this.lastTapTime > 0 && (currentTime - this.lastTapTime < CHART_CONFIG.INTERACTION.DOUBLE_CLICK_THRESHOLD) // 双击检测阈值
           
           // 检查点击位置是否在图表区域内
           if (this.isPointInChartArea(this.startX, this.startY)) {
@@ -1768,9 +1955,9 @@ export default {
       }
       
       // 计算图表区域
-      const leftPadding = 60  // 进一步增加左边距为价格标签预留更多空间
-      const rightPadding = 50  // 右边距保持不变
-      const topPadding = 20
+      const leftPadding = CHART_CONFIG.PADDING.LEFT  // 使用配置的左边距
+      const rightPadding = this.getRightPadding()  // 使用动态右边距
+      const topPadding = CHART_CONFIG.PADDING.TOP
       const chartWidth = this.canvasWidth - leftPadding - rightPadding
       let bottomPadding = 40
       if (this.currentPeriod !== 'minute') {
@@ -1847,8 +2034,8 @@ export default {
     updateCrosshairY() {
       if (!this.crosshairData) return
       
-      const leftPadding = 60  // 进一步增加左边距为价格标签预留更多空间
-      const topPadding = 20
+      const leftPadding = CHART_CONFIG.PADDING.LEFT  // 使用配置的左边距
+      const topPadding = CHART_CONFIG.PADDING.TOP
       let bottomPadding = 40
       if (this.currentPeriod !== 'minute') {
         const volumeChartHeight = 35
@@ -1894,155 +2081,6 @@ export default {
       this.crosshairY = topPadding + mainChartHeight - ((currentPrice - minPrice) / (maxPrice - minPrice)) * mainChartHeight
     },
     
-    // 绘制图表
-    async drawChart() {
-      if (this.isDrawing || !this.klineData.length || !this.canvasWidth) {
-        return
-      }
-      
-      this.isDrawing = true
-      
-      try {
-        const canvasInfo = await this.getCanvasContext()
-        if (!canvasInfo) {
-          this.errorMessage = '画布初始化失败'
-          return
-        }
-        
-        const { ctx } = canvasInfo
-        
-        ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight)
-        
-        const leftPadding = 15  // 与其他方法保持一致，确保十字线对齐
-        const rightPadding = 5  // 与其他方法保持一致
-        const topPadding = 20
-        
-        let bottomPadding = 40
-        let volumeChartHeight = 0
-        let volumeChartTop = 0
-        
-        if (this.currentPeriod !== 'minute') {
-          volumeChartHeight = 35
-          const volumeGap = 20
-          const extraSpace = 10
-          bottomPadding = volumeGap + volumeChartHeight + extraSpace
-          volumeChartTop = topPadding + (this.canvasHeight - topPadding - bottomPadding) + volumeGap
-        }
-        
-        const chartWidth = this.canvasWidth - leftPadding - rightPadding
-        const mainChartHeight = this.canvasHeight - topPadding - bottomPadding
-        
-        const endIndex = this.klineData.length
-        let startIndex, visibleData
-        
-        if (this.currentPeriod === 'minute') {
-          startIndex = 0
-          visibleData = this.klineData
-        } else {
-          const visibleCount = this.getVisibleCount()
-          startIndex = Math.max(0, endIndex - visibleCount)
-          visibleData = this.klineData.slice(startIndex, endIndex)
-        }
-        
-        if (!visibleData.length) {
-          ctx.fillStyle = '#999999'
-          ctx.font = '16px sans-serif'
-          ctx.textAlign = 'center'
-          ctx.fillText('暂无K线数据', this.canvasWidth / 2, this.canvasHeight / 2)
-          return
-        }
-        
-        let minPrice = Infinity
-        let maxPrice = -Infinity
-        
-        if (this.currentPeriod === 'minute') {
-          visibleData.forEach(item => {
-            minPrice = Math.min(minPrice, item.price)
-            maxPrice = Math.max(maxPrice, item.price)
-          })
-        } else {
-          visibleData.forEach(item => {
-            minPrice = Math.min(minPrice, item.low)
-            maxPrice = Math.max(maxPrice, item.high)
-          })
-        }
-        
-        const priceRange = maxPrice - minPrice
-        const pricePadding = priceRange * 0.1
-        minPrice -= pricePadding
-        maxPrice += pricePadding
-        
-        this.drawGrid(ctx, leftPadding, topPadding, chartWidth, mainChartHeight, minPrice, maxPrice)
-        
-        if (this.currentPeriod === 'minute') {
-          this.drawMinuteLine(ctx, visibleData, leftPadding, topPadding, chartWidth, mainChartHeight, minPrice, maxPrice)
-        } else {
-          this.drawKlines(ctx, visibleData, leftPadding, topPadding, chartWidth, mainChartHeight, minPrice, maxPrice)
-          this.drawSeparatorLine(ctx, leftPadding, topPadding + mainChartHeight + 10, chartWidth)
-          // 在K线和成交量之间绘制日期标签，上移5px避免遮挡成交量图
-          this.drawKlineDateLabels(ctx, visibleData, leftPadding, topPadding + mainChartHeight + 25, chartWidth)
-          this.drawVolumeChart(ctx, visibleData, leftPadding, volumeChartTop, chartWidth, volumeChartHeight)
-        }
-        
-        this.drawPriceLabels(ctx, leftPadding, topPadding, mainChartHeight, minPrice, maxPrice)
-        
-        // 如果需要显示十字线，在同一个上下文中绘制
-        if (this.showCrosshair && this.crosshairX && this.crosshairY) {
-          ctx.strokeStyle = '#666666'
-          ctx.lineWidth = 1
-          ctx.setLineDash([5, 5])
-          
-          // 绘制垂直线
-          ctx.beginPath()
-          ctx.moveTo(this.crosshairX, topPadding)
-          ctx.lineTo(this.crosshairX, topPadding + mainChartHeight)
-          ctx.stroke()
-          
-          // 绘制水平线
-          ctx.beginPath()
-          ctx.moveTo(leftPadding, this.crosshairY)
-          ctx.lineTo(leftPadding + chartWidth, this.crosshairY)
-          ctx.stroke()
-          
-          ctx.setLineDash([])
-          
-          // 绘制交叉点
-          ctx.fillStyle = '#666666'
-          ctx.beginPath()
-          ctx.arc(this.crosshairX, this.crosshairY, 3, 0, 2 * Math.PI)
-          ctx.fill()
-          
-          // 绘制价格标签
-          if (this.crosshairData) {
-            let currentPrice = 0
-            if (this.currentPeriod === 'minute') {
-              currentPrice = this.crosshairData.price || 0
-            } else {
-              currentPrice = this.crosshairData.close || 0
-            }
-            
-            const priceText = this.formatPrice(currentPrice)
-            ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
-            ctx.fillRect(5, this.crosshairY - 10, 50, 20)
-            ctx.fillStyle = '#ffffff'
-            ctx.font = '12px sans-serif'  // 从10px增加为12px，提高清晰度
-            ctx.textAlign = 'center'
-            ctx.fillText(priceText, 30, this.crosshairY + 3)
-            
-            ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
-            ctx.fillRect(leftPadding + chartWidth + 5, this.crosshairY - 10, 50, 20)
-            ctx.fillStyle = '#ffffff'
-            ctx.fillText(priceText, leftPadding + chartWidth + 30, this.crosshairY + 3)
-          }
-        }
-        
-        this.lastDrawnDataLength = this.klineData.length
-        this.lastDrawnPeriod = this.currentPeriod
-        this.isDrawing = false
-      } catch (error) {
-        this.isDrawing = false
-      }
-    },
     
     // 单次绘制图表和十字线
     async drawChartAndCrosshairOnce() {
@@ -2066,7 +2104,7 @@ export default {
         
         const leftPadding = 15  // 与其他方法保持一致，确保十字线对齐
         const rightPadding = 5  // 与其他方法保持一致
-        const topPadding = 20
+        const topPadding = CHART_CONFIG.PADDING.TOP
         
         let bottomPadding = 40
         let volumeChartHeight = 0
@@ -2139,7 +2177,8 @@ export default {
         
         // 如果需要显示十字线，在同一个上下文中绘制
         if (this.showCrosshair && this.crosshairX && this.crosshairY) {
-          ctx.strokeStyle = '#666666'
+          
+          ctx.strokeStyle = CHART_CONFIG.COLORS.CROSSHAIR
           ctx.lineWidth = 1
           ctx.setLineDash([5, 5])
           
@@ -2158,9 +2197,9 @@ export default {
           ctx.setLineDash([])
           
           // 绘制交叉点
-          ctx.fillStyle = '#666666'
+          ctx.fillStyle = CHART_CONFIG.COLORS.CROSSHAIR
           ctx.beginPath()
-          ctx.arc(this.crosshairX, this.crosshairY, 3, 0, 2 * Math.PI)
+          ctx.arc(this.crosshairX, this.crosshairY, CHART_CONFIG.INTERACTION.CROSSHAIR_RADIUS, 0, 2 * Math.PI)
           ctx.fill()
           
           // 绘制十字线标签
@@ -2293,9 +2332,9 @@ export default {
       ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight)
       
       // 计算绘制参数
-      const leftPadding = 60  // 进一步增加左边距为价格标签预留更多空间
-      const rightPadding = 50  // 右边距保持不变
-      const topPadding = 20
+      const leftPadding = CHART_CONFIG.PADDING.LEFT  // 使用配置的左边距
+      const rightPadding = this.getRightPadding()  // 使用动态右边距
+      const topPadding = CHART_CONFIG.PADDING.TOP
       
       // 动态计算底部空间
       let bottomPadding = 40 // 分时图的底部空间（时间标签）
@@ -2447,9 +2486,9 @@ export default {
       
       // 直接使用 Canvas 2D API
       
-      const leftPadding = 60  // 进一步增加左边距为价格标签预留更多空间
-      const rightPadding = 50  // 右边距保持不变
-      const topPadding = 20
+      const leftPadding = CHART_CONFIG.PADDING.LEFT  // 使用配置的左边距
+      const rightPadding = this.getRightPadding()  // 使用动态右边距
+      const topPadding = CHART_CONFIG.PADDING.TOP
       const chartWidth = this.canvasWidth - leftPadding - rightPadding
       let bottomPadding = 60
       if (this.currentPeriod !== 'minute') {
@@ -2592,33 +2631,37 @@ export default {
     
     // 检查点击位置是否在可交互的图表区域内
     isPointInChartArea(x, y) {
-      const leftPadding = 60  // 进一步增加左边距为价格标签预留更多空间
-      const rightPadding = 50  // 右边距保持不变
-      const topPadding = 20
+      const leftPadding = CHART_CONFIG.PADDING.LEFT  // 使用配置的左边距
+      const rightPadding = this.getRightPadding()  // 使用动态右边距
+      const topPadding = CHART_CONFIG.PADDING.TOP
       const chartWidth = this.canvasWidth - leftPadding - rightPadding
-      let bottomPadding = 40
+      let bottomPadding = CHART_CONFIG.PADDING.BOTTOM
       
       // 对于分时图，只检查主图表区域
       if (this.currentPeriod === 'minute') {
         const mainChartHeight = this.canvasHeight - topPadding - bottomPadding
         
-        return x >= leftPadding && 
+        const inArea = x >= leftPadding && 
                x <= leftPadding + chartWidth && 
                y >= topPadding && 
                y <= topPadding + mainChartHeight
+               
+        return inArea
       } else {
         // 对于K线图，包括主图表区域和成交量图区域
-        const volumeChartHeight = 35
-        const volumeGap = 20
-        const extraSpace = 10
+        const volumeChartHeight = CHART_CONFIG.PADDING.VOLUME_HEIGHT
+        const volumeGap = CHART_CONFIG.PADDING.VOLUME_GAP
+        const extraSpace = CHART_CONFIG.PADDING.EXTRA_SPACE
         bottomPadding = volumeGap + volumeChartHeight + extraSpace
         const mainChartHeight = this.canvasHeight - topPadding - bottomPadding
         const totalInteractiveHeight = mainChartHeight + volumeGap + volumeChartHeight
         
-        return x >= leftPadding && 
+        const inArea = x >= leftPadding && 
                x <= leftPadding + chartWidth && 
                y >= topPadding && 
                y <= topPadding + totalInteractiveHeight
+               
+        return inArea
       }
     },
     
@@ -2677,7 +2720,7 @@ export default {
         console.warn('检查市场状态失败，仍然启动定时刷新:', error)
       }
       
-      // 设置定时器，每2秒刷新一次分时数据（从3秒调整为2秒以提高流畅度）
+      // 设置定时器，每3秒刷新一次分时数据（优化频率）
       this.minuteRefreshTimer = setInterval(async () => {
         // 只有在分时图模式下才刷新
         if (this.currentPeriod === 'minute' && this.stockCode) {
@@ -2727,7 +2770,7 @@ export default {
           // 如果不是分时图模式，停止定时器
           this.stopMinuteRefresh()
         }
-      }, 2000) // 2秒间隔更新分时数据（从3秒调整为2秒）
+      }, CHART_CONFIG.PERFORMANCE.MINUTE_REFRESH_INTERVAL) // 使用配置的刷新间隔
     },
     
     // 通过时间判断市场状态
@@ -2895,7 +2938,7 @@ export default {
   top: -2px;
   left: 0;
   right: 0;
-  width: calc(100% - 120px); /* 适应统一的左边距60px，两边各留出60px空间 */
+  width: calc(100% - 90px); /* 适应新的左右边距各45px */
   background: rgba(255, 255, 255, 0.95); /* 提高透明度 */
   border: 1px solid rgba(0, 0, 0, 0.08); /* 更淡的边框 */
   border-radius: 6px; /* 增加圆角 */
@@ -2903,7 +2946,7 @@ export default {
   z-index: 10;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08); /* 更柔和的阴影 */
   margin: 5px auto; /* 居中显示 */
-  margin-left: 60px; /* 适应统一的左边距60px，确保十字线对齐 */
+  margin-left: 45px; /* 适应新的左边距45px，确保十字线对齐 */
   
   .info-content {
     display: flex;
