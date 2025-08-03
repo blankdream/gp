@@ -27,6 +27,23 @@
             <text class="info-item">开: {{ formatPrice(crosshairData.open) }}</text>
             <text class="info-item">收: {{ formatPrice(crosshairData.close) }}</text>
             <text class="info-item" :class="getPriceChangeClass(crosshairData.close, crosshairData.open)">幅: {{ formatKlinePriceChange(crosshairData) }}</text>
+            <text v-if="crosshairData.ma5" class="info-item ma5">MA5: {{ formatPrice(crosshairData.ma5) }}</text>
+            <text v-if="crosshairData.ma10" class="info-item ma10">MA10: {{ formatPrice(crosshairData.ma10) }}</text>
+            <text v-if="crosshairData.ma30" class="info-item ma30">MA30: {{ formatPrice(crosshairData.ma30) }}</text>
+            <!-- 显示当前选择指标的数值 -->
+            <template v-if="currentIndicator === 'MACD'">
+              <text v-if="crosshairData.macdDif" class="info-item macd-dif">DIF: {{ formatPrice(crosshairData.macdDif, 4) }}</text>
+              <text v-if="crosshairData.macdDea" class="info-item macd-dea">DEA: {{ formatPrice(crosshairData.macdDea, 4) }}</text>
+              <text v-if="crosshairData.macdHistogram" class="info-item macd-histogram">MACD: {{ formatPrice(crosshairData.macdHistogram, 4) }}</text>
+            </template>
+            <template v-else-if="currentIndicator === 'RSI'">
+              <text v-if="crosshairData.rsi" class="info-item rsi">RSI: {{ formatPrice(crosshairData.rsi, 2) }}</text>
+            </template>
+            <template v-else-if="currentIndicator === 'BOLL'">
+              <text v-if="crosshairData.bollUpper" class="info-item boll-upper">上轨: {{ formatPrice(crosshairData.bollUpper) }}</text>
+              <text v-if="crosshairData.bollMiddle" class="info-item boll-middle">中轨: {{ formatPrice(crosshairData.bollMiddle) }}</text>
+              <text v-if="crosshairData.bollLower" class="info-item boll-lower">下轨: {{ formatPrice(crosshairData.bollLower) }}</text>
+            </template>
           </template>
         </view>
       </view>
@@ -42,6 +59,24 @@
         @touchend="onTouchEnd"
         @wheel.prevent="onWheel"
       ></canvas>
+      
+      <!-- 指标切换下拉框（仅在非分时图模式下显示，定位在成交量图右上角） -->
+      <view v-if="currentPeriod !== 'minute'" class="indicator-dropdown-container">
+        <view class="indicator-dropdown" @tap="toggleDropdown">
+          <text class="dropdown-text">{{ getCurrentIndicatorLabel() }}</text>
+          <text class="dropdown-arrow" :class="{ active: showDropdown }">▼</text>
+        </view>
+        <view v-if="showDropdown" class="dropdown-menu">
+          <view 
+            v-for="indicator in indicators" 
+            :key="indicator.value"
+            :class="['dropdown-item', { active: currentIndicator === indicator.value }]"
+            @tap="selectIndicator(indicator.value)"
+          >
+            {{ indicator.label }}
+          </view>
+        </view>
+      </view>
     </view>
     
     <!-- 加载状态 -->
@@ -144,7 +179,20 @@ const CHART_CONFIG = {
     NEUTRAL: '#cccccc',   // 中性（灰色）
     GRID: 'rgba(160, 160, 160, 0.3)', // 网格线
     CROSSHAIR: '#666666', // 十字线
-    YESTERDAY_CLOSE: '#999999' // 昨收价线
+    YESTERDAY_CLOSE: '#999999', // 昨收价线
+    MA5: '#FFB84D',       // 5日均线（橙色）
+    MA10: '#9C7BF5',      // 10日均线（紫色）
+    MA30: '#00BFFF',      // 30日均线（天蓝色）
+    // 技术指标颜色
+    MACD_DIF: '#FFD700',  // MACD DIF线（金色）
+    MACD_DEA: '#FF69B4',  // MACD DEA线（粉色）
+    MACD_HISTOGRAM: '#32CD32', // MACD柱状图（绿色）
+    BOLL_UPPER: '#FF6347', // 布林带上轨（红色）
+    BOLL_MIDDLE: '#FFD700', // 布林带中轨（金色）
+    BOLL_LOWER: '#32CD32', // 布林带下轨（绿色）
+    RSI_LINE: '#9370DB',  // RSI线（紫色）
+    RSI_OVERBOUGHT: '#FF4500', // RSI超买线（橙红色）
+    RSI_OVERSOLD: '#228B22'   // RSI超卖线（森林绿）
   },
   
   // 性能配置
@@ -269,6 +317,17 @@ export default {
       
       // 分时图专用数据
       minuteLinePath: [], // 分时线路径数据，用于十字线交互
+      
+      // 技术指标相关
+      currentIndicator: 'VOLUME', // 当前显示的指标：VOLUME, MACD, BOLL, RSI
+      indicators: [
+        { label: '成交量', value: 'VOLUME' },
+        { label: 'MACD', value: 'MACD' },
+        { label: 'BOLL', value: 'BOLL' },
+        { label: 'RSI', value: 'RSI' }
+      ],
+      indicatorData: {}, // 缓存计算好的指标数据
+      showDropdown: false // 控制下拉菜单显示
     }
   },
   
@@ -291,15 +350,20 @@ export default {
       // 移除重复的loadKlineData调用，initChart方法已经处理了数据加载
     })
     
+    // 添加全局点击事件监听器，用于关闭下拉框
+    document.addEventListener('click', this.handleGlobalClick)
+    
     // 添加调试信息
     // K线图组件已挂载
   },
   beforeDestroy() {
     this.cleanup()
+    document.removeEventListener('click', this.handleGlobalClick)
   },
   beforeUnmount() {
     // Vue 3 兼容性
     this.cleanup()
+    document.removeEventListener('click', this.handleGlobalClick)
   },
   deactivated() {
     // keep-alive 组件失活时停止定时器
@@ -1292,7 +1356,9 @@ export default {
           this.drawSeparatorLine(ctx, leftPadding, topPadding + mainChartHeight + 10, chartWidth)
           // 在K线和成交量之间绘制日期标签，上移5px避免遮挡成交量图
           this.drawKlineDateLabels(ctx, visibleData, leftPadding, topPadding + mainChartHeight + 25, chartWidth)
-          this.drawVolumeChart(ctx, visibleData, leftPadding, volumeChartTop, chartWidth, volumeChartHeight)
+          
+          // 根据当前选择的指标绘制对应的图表
+          this.drawIndicatorChart(ctx, visibleData, leftPadding, volumeChartTop, chartWidth, volumeChartHeight)
         }
         
         this.drawPriceLabels(ctx, leftPadding, topPadding, mainChartHeight, minPrice, maxPrice)
@@ -1503,6 +1569,256 @@ export default {
           ctx.fillStyle = color
           ctx.fillRect(x - rectWidth / 2, rectY, rectWidth, rectHeight)
         }
+      }
+      
+      // 绘制移动平均线（只在K线图模式下）
+      if (this.currentPeriod !== 'minute') {
+        this.drawMovingAverages(ctx, data, leftPadding, topPadding, width, height, minPrice, maxPrice, barWidth)
+      }
+    },
+    
+    // 绘制移动平均线
+    drawMovingAverages(ctx, data, leftPadding, topPadding, width, height, minPrice, maxPrice, barWidth) {
+      if (!data || data.length === 0) return
+      
+      const priceRange = maxPrice - minPrice
+      if (priceRange === 0) return
+      
+      // 计算移动平均线
+      const { ma5, ma10, ma30 } = this.calculateMovingAverages(data)
+      
+      // 绘制配置
+      const maLines = [
+        { values: ma5, color: CHART_CONFIG.COLORS.MA5, lineWidth: 1.5 },
+        { values: ma10, color: CHART_CONFIG.COLORS.MA10, lineWidth: 1.5 },
+        { values: ma30, color: CHART_CONFIG.COLORS.MA30, lineWidth: 1.5 }
+      ]
+      
+      // 绘制每条移动平均线
+      maLines.forEach(({ values, color, lineWidth }) => {
+        if (!values || values.length === 0) return
+        
+        ctx.strokeStyle = color
+        ctx.lineWidth = lineWidth
+        ctx.beginPath()
+        
+        let pathStarted = false
+        
+        for (let i = 0; i < values.length; i++) {
+          const maValue = values[i]
+          
+          if (maValue !== null && maValue !== undefined && !isNaN(maValue)) {
+            const x = leftPadding + i * barWidth + barWidth / 2
+            const y = topPadding + height - ((maValue - minPrice) / priceRange) * height
+            
+            if (!pathStarted) {
+              ctx.moveTo(x, y)
+              pathStarted = true
+            } else {
+              ctx.lineTo(x, y)
+            }
+          } else {
+            // 遇到null值，结束当前路径并开始新的路径
+            if (pathStarted) {
+              ctx.stroke()
+              ctx.beginPath()
+              pathStarted = false
+            }
+          }
+        }
+        
+        if (pathStarted) {
+          ctx.stroke()
+        }
+      })
+    },
+    
+    // 绘制技术指标图表
+    drawIndicatorChart(ctx, data, leftPadding, topPadding, width, height) {
+      if (!data || data.length === 0 || height <= 0) return
+      
+      switch (this.currentIndicator) {
+        case 'VOLUME':
+          this.drawVolumeChart(ctx, data, leftPadding, topPadding, width, height)
+          break
+        case 'MACD':
+          this.drawMACDChart(ctx, data, leftPadding, topPadding, width, height)
+          break
+        case 'BOLL':
+          this.drawBOLLChart(ctx, data, leftPadding, topPadding, width, height)
+          break
+        case 'RSI':
+          this.drawRSIChart(ctx, data, leftPadding, topPadding, width, height)
+          break
+        default:
+          this.drawVolumeChart(ctx, data, leftPadding, topPadding, width, height)
+      }
+    },
+    
+    // 绘制MACD图表
+    drawMACDChart(ctx, data, leftPadding, topPadding, width, height) {
+      if (!data || data.length === 0) return
+      
+      const { dif, dea, histogram } = this.calculateMACD(data)
+      const barWidth = width / data.length
+      
+      // 计算MACD数值范围
+      let minValue = 0
+      let maxValue = 0
+      
+      for (let i = 0; i < data.length; i++) {
+        if (dif[i] != null) {
+          minValue = Math.min(minValue, dif[i], dea[i], histogram[i])
+          maxValue = Math.max(maxValue, dif[i], dea[i], histogram[i])
+        }
+      }
+      
+      // 添加一些边距
+      const range = maxValue - minValue
+      const padding = range * 0.1
+      minValue -= padding
+      maxValue += padding
+      
+      if (maxValue === minValue) return
+      
+      // 绘制0轴线
+      const zeroY = topPadding + height - ((0 - minValue) / (maxValue - minValue)) * height
+      ctx.strokeStyle = 'rgba(128, 128, 128, 0.5)'
+      ctx.lineWidth = 1
+      ctx.setLineDash([2, 2])
+      ctx.beginPath()
+      ctx.moveTo(leftPadding, zeroY)
+      ctx.lineTo(leftPadding + width, zeroY)
+      ctx.stroke()
+      ctx.setLineDash([])
+      
+      // 绘制HISTOGRAM柱状图
+      for (let i = 0; i < data.length; i++) {
+        if (histogram[i] != null) {
+          const x = leftPadding + i * barWidth + barWidth / 2
+          const barHeight = Math.abs(histogram[i] / (maxValue - minValue)) * height
+          const barY = histogram[i] >= 0 ? 
+            zeroY - barHeight : zeroY
+          
+          ctx.fillStyle = histogram[i] >= 0 ? CHART_CONFIG.COLORS.UP : CHART_CONFIG.COLORS.DOWN
+          const rectWidth = Math.max(1, barWidth * 0.6)
+          ctx.fillRect(x - rectWidth / 2, barY, rectWidth, Math.abs(barHeight))
+        }
+      }
+      
+      // 绘制DIF线
+      this.drawIndicatorLine(ctx, dif, leftPadding, topPadding, width, height, minValue, maxValue, barWidth, CHART_CONFIG.COLORS.MACD_DIF, 1.5)
+      
+      // 绘制DEA线
+      this.drawIndicatorLine(ctx, dea, leftPadding, topPadding, width, height, minValue, maxValue, barWidth, CHART_CONFIG.COLORS.MACD_DEA, 1.5)
+      
+      // 绘制标签
+      this.drawIndicatorLabels(ctx, leftPadding, topPadding, height, minValue, maxValue, 'MACD')
+    },
+    
+    // 绘制BOLL图表（在主图上绘制）
+    drawBOLLChart(ctx, data, leftPadding, topPadding, width, height) {
+      // BOLL需要在主图上绘制，这里先显示成交量图
+      this.drawVolumeChart(ctx, data, leftPadding, topPadding, width, height)
+    },
+    
+    // 绘制RSI图表
+    drawRSIChart(ctx, data, leftPadding, topPadding, width, height) {
+      if (!data || data.length === 0) return
+      
+      const rsiValues = this.calculateRSI(data)
+      const barWidth = width / data.length
+      
+      // RSI范围固定为0-100
+      const minValue = 0
+      const maxValue = 100
+      
+      // 绘制超买超卖线
+      const overboughtY = topPadding + height * (1 - 70 / 100) // 70线
+      const oversoldY = topPadding + height * (1 - 30 / 100)   // 30线
+      
+      ctx.strokeStyle = CHART_CONFIG.COLORS.RSI_OVERBOUGHT
+      ctx.lineWidth = 1
+      ctx.setLineDash([3, 3])
+      ctx.beginPath()
+      ctx.moveTo(leftPadding, overboughtY)
+      ctx.lineTo(leftPadding + width, overboughtY)
+      ctx.stroke()
+      
+      ctx.strokeStyle = CHART_CONFIG.COLORS.RSI_OVERSOLD
+      ctx.beginPath()
+      ctx.moveTo(leftPadding, oversoldY)
+      ctx.lineTo(leftPadding + width, oversoldY)
+      ctx.stroke()
+      ctx.setLineDash([])
+      
+      // 绘制RSI线
+      this.drawIndicatorLine(ctx, rsiValues, leftPadding, topPadding, width, height, minValue, maxValue, barWidth, CHART_CONFIG.COLORS.RSI_LINE, 2)
+      
+      // 绘制标签
+      this.drawIndicatorLabels(ctx, leftPadding, topPadding, height, minValue, maxValue, 'RSI')
+    },
+    
+    // 通用指标线绘制函数
+    drawIndicatorLine(ctx, values, leftPadding, topPadding, width, height, minValue, maxValue, barWidth, color, lineWidth) {
+      if (!values || values.length === 0 || maxValue === minValue) return
+      
+      ctx.strokeStyle = color
+      ctx.lineWidth = lineWidth
+      ctx.beginPath()
+      
+      let pathStarted = false
+      
+      for (let i = 0; i < values.length; i++) {
+        const value = values[i]
+        
+        if (value !== null && value !== undefined && !isNaN(value)) {
+          const x = leftPadding + i * barWidth + barWidth / 2
+          const y = topPadding + height - ((value - minValue) / (maxValue - minValue)) * height
+          
+          if (!pathStarted) {
+            ctx.moveTo(x, y)
+            pathStarted = true
+          } else {
+            ctx.lineTo(x, y)
+          }
+        } else {
+          if (pathStarted) {
+            ctx.stroke()
+            ctx.beginPath()
+            pathStarted = false
+          }
+        }
+      }
+      
+      if (pathStarted) {
+        ctx.stroke()
+      }
+    },
+    
+    // 绘制指标标签
+    drawIndicatorLabels(ctx, leftPadding, topPadding, height, minValue, maxValue, indicatorType) {
+      ctx.fillStyle = '#666666'
+      ctx.font = CHART_CONFIG.FONTS.VOLUME_LABEL
+      ctx.textAlign = 'right'
+      
+      if (indicatorType === 'RSI') {
+        // RSI显示0, 30, 70, 100
+        const labels = [
+          { value: 100, text: '100' },
+          { value: 70, text: '70' },
+          { value: 30, text: '30' },
+          { value: 0, text: '0' }
+        ]
+        
+        labels.forEach(({ value, text }) => {
+          const y = topPadding + height * (1 - value / 100)
+          ctx.fillText(text, leftPadding - 5, y + 3)
+        })
+      } else {
+        // 其他指标显示最大值和最小值
+        ctx.fillText(maxValue.toFixed(3), leftPadding - 5, topPadding + 12)
+        ctx.fillText(minValue.toFixed(3), leftPadding - 5, topPadding + height - 2)
       }
     },
     
@@ -2231,7 +2547,33 @@ export default {
         dataIndex = Math.floor(relativeX / barWidth)
         dataIndex = Math.max(0, Math.min(visibleData.length - 1, dataIndex))
         alignedX = leftPadding + dataIndex * barWidth + barWidth / 2
+        
+        // 获取K线数据和移动平均线数据
         this.crosshairData = visibleData[dataIndex]
+        
+        // 计算移动平均线在该位置的值
+        if (this.crosshairData) {
+          const { ma5, ma10, ma30 } = this.calculateMovingAverages(visibleData)
+          this.crosshairData.ma5 = ma5[dataIndex] || null
+          this.crosshairData.ma10 = ma10[dataIndex] || null
+          this.crosshairData.ma30 = ma30[dataIndex] || null
+          
+          // 根据当前选择的指标添加对应的数值
+          if (this.currentIndicator === 'MACD') {
+            const { dif, dea, histogram } = this.calculateMACD(visibleData)
+            this.crosshairData.macdDif = dif[dataIndex] || null
+            this.crosshairData.macdDea = dea[dataIndex] || null
+            this.crosshairData.macdHistogram = histogram[dataIndex] || null
+          } else if (this.currentIndicator === 'RSI') {
+            const rsiValues = this.calculateRSI(visibleData)
+            this.crosshairData.rsi = rsiValues[dataIndex] || null
+          } else if (this.currentIndicator === 'BOLL') {
+            const { upper, middle, lower } = this.calculateBOLL(visibleData)
+            this.crosshairData.bollUpper = upper[dataIndex] || null
+            this.crosshairData.bollMiddle = middle[dataIndex] || null
+            this.crosshairData.bollLower = lower[dataIndex] || null
+          }
+        }
       }
       
       // 检查是否点击了同一个数据点，避免不必要的重绘
@@ -2366,9 +2708,9 @@ export default {
     },
     
     // 格式化价格显示
-    formatPrice(price) {
+    formatPrice(price, decimal = 2) {
       if (!price && price !== 0) return '--'
-      return price.toFixed(2)
+      return price.toFixed(decimal)
     },
     
     // 格式化K线价格变化
@@ -2537,6 +2879,292 @@ export default {
       this.lastMarketCheck = 0
       this.refreshErrorCount = 0
     },
+    
+    // 计算移动平均线
+    /**
+     * 计算简单移动平均线 (SMA)
+     * @param {Array} data K线数据数组
+     * @param {number} period 均线周期
+     * @returns {Array} 移动平均线数组
+     */
+    calculateSMA(data, period) {
+      if (!data || data.length < period) return []
+      
+      const smaValues = []
+      
+      for (let i = 0; i < data.length; i++) {
+        if (i < period - 1) {
+          // 前面不足周期的数据点设为null
+          smaValues.push(null)
+        } else {
+          // 计算当前点的移动平均值
+          let sum = 0
+          for (let j = i - period + 1; j <= i; j++) {
+            sum += data[j].close
+          }
+          smaValues.push(sum / period)
+        }
+      }
+      
+      return smaValues
+    },
+    
+    /**
+     * 计算多条移动平均线
+     * @param {Array} data K线数据数组
+     * @returns {Object} 包含MA5、MA10、MA30的对象
+     */
+    calculateMovingAverages(data) {
+      if (!data || data.length === 0) {
+        return { ma5: [], ma10: [], ma30: [] }
+      }
+      
+      return {
+        ma5: this.calculateSMA(data, 5),
+        ma10: this.calculateSMA(data, 10),
+        ma30: this.calculateSMA(data, 30)
+      }
+    },
+    
+    // 技术指标计算函数
+    
+    /**
+     * 计算指数移动平均线 (EMA)
+     * @param {Array} data K线数据数组
+     * @param {number} period 周期
+     * @returns {Array} EMA数组
+     */
+    calculateEMA(data, period) {
+      if (!data || data.length === 0) return []
+      
+      const emaValues = []
+      const multiplier = 2 / (period + 1)
+      
+      // 第一个值使用SMA
+      let sum = 0
+      for (let i = 0; i < Math.min(period, data.length); i++) {
+        sum += data[i].close
+      }
+      emaValues[0] = sum / Math.min(period, data.length)
+      
+      // 后续值使用EMA公式
+      for (let i = 1; i < data.length; i++) {
+        emaValues[i] = (data[i].close * multiplier) + (emaValues[i - 1] * (1 - multiplier))
+      }
+      
+      return emaValues
+    },
+    
+    /**
+     * 计算MACD指标
+     * @param {Array} data K线数据数组
+     * @param {number} fastPeriod 快线周期，默认12
+     * @param {number} slowPeriod 慢线周期，默认26
+     * @param {number} signalPeriod 信号线周期，默认9
+     * @returns {Object} 包含DIF、DEA、HISTOGRAM的对象
+     */
+    calculateMACD(data, fastPeriod = 12, slowPeriod = 26, signalPeriod = 9) {
+      if (!data || data.length === 0) {
+        return { dif: [], dea: [], histogram: [] }
+      }
+      
+      // 计算快线和慢线EMA
+      const fastEMA = this.calculateEMA(data, fastPeriod)
+      const slowEMA = this.calculateEMA(data, slowPeriod)
+      
+      // 计算DIF线 (快线EMA - 慢线EMA)
+      const dif = []
+      for (let i = 0; i < data.length; i++) {
+        dif[i] = fastEMA[i] - slowEMA[i]
+      }
+      
+      // 计算DEA线 (DIF的EMA)
+      const dea = []
+      const deaMultiplier = 2 / (signalPeriod + 1)
+      dea[0] = dif[0] || 0
+      
+      for (let i = 1; i < dif.length; i++) {
+        dea[i] = (dif[i] * deaMultiplier) + (dea[i - 1] * (1 - deaMultiplier))
+      }
+      
+      // 计算HISTOGRAM (DIF - DEA) * 2
+      const histogram = []
+      for (let i = 0; i < data.length; i++) {
+        histogram[i] = (dif[i] - dea[i]) * 2
+      }
+      
+      return { dif, dea, histogram }
+    },
+    
+    /**
+     * 计算布林带 (BOLL)
+     * @param {Array} data K线数据数组
+     * @param {number} period 周期，默认20
+     * @param {number} multiplier 标准差倍数，默认2
+     * @returns {Object} 包含上轨、中轨、下轨的对象
+     */
+    calculateBOLL(data, period = 20, multiplier = 2) {
+      if (!data || data.length === 0) {
+        return { upper: [], middle: [], lower: [] }
+      }
+      
+      const upper = []
+      const middle = []
+      const lower = []
+      
+      for (let i = 0; i < data.length; i++) {
+        if (i < period - 1) {
+          // 前面不足周期的数据点设为null
+          upper.push(null)
+          middle.push(null)
+          lower.push(null)
+        } else {
+          // 计算当前周期内的平均价格和标准差
+          let sum = 0
+          const prices = []
+          
+          for (let j = i - period + 1; j <= i; j++) {
+            const price = data[j].close
+            sum += price
+            prices.push(price)
+          }
+          
+          const ma = sum / period // 中轨（移动平均线）
+          
+          // 计算标准差
+          let variance = 0
+          for (let k = 0; k < prices.length; k++) {
+            variance += Math.pow(prices[k] - ma, 2)
+          }
+          const stdDev = Math.sqrt(variance / period)
+          
+          // 计算上轨和下轨
+          const upperBand = ma + (multiplier * stdDev)
+          const lowerBand = ma - (multiplier * stdDev)
+          
+          upper.push(upperBand)
+          middle.push(ma)
+          lower.push(lowerBand)
+        }
+      }
+      
+      return { upper, middle, lower }
+    },
+    
+    /**
+     * 计算RSI指标
+     * @param {Array} data K线数据数组
+     * @param {number} period 周期，默认14
+     * @returns {Array} RSI数组
+     */
+    calculateRSI(data, period = 14) {
+      if (!data || data.length === 0) return []
+      
+      const rsiValues = []
+      const gains = []
+      const losses = []
+      
+      // 计算每日涨跌
+      for (let i = 1; i < data.length; i++) {
+        const change = data[i].close - data[i - 1].close
+        gains.push(change > 0 ? change : 0)
+        losses.push(change < 0 ? Math.abs(change) : 0)
+      }
+      
+      // 第一个RSI值为null（需要前一日数据）
+      rsiValues.push(null)
+      
+      // 计算第一个周期的平均增益和平均损失
+      if (gains.length >= period) {
+        let avgGain = 0
+        let avgLoss = 0
+        
+        for (let i = 0; i < period; i++) {
+          avgGain += gains[i]
+          avgLoss += losses[i]
+        }
+        
+        avgGain /= period
+        avgLoss /= period
+        
+        // 计算第一个RSI值
+        const rs = avgLoss === 0 ? 100 : avgGain / avgLoss
+        const rsi = 100 - (100 / (1 + rs))
+        rsiValues.push(rsi)
+        
+        // 计算后续RSI值（使用Wilder's平滑方法）
+        for (let i = period; i < gains.length; i++) {
+          avgGain = ((avgGain * (period - 1)) + gains[i]) / period
+          avgLoss = ((avgLoss * (period - 1)) + losses[i]) / period
+          
+          const rs = avgLoss === 0 ? 100 : avgGain / avgLoss
+          const rsi = 100 - (100 / (1 + rs))
+          rsiValues.push(rsi)
+        }
+      }
+      
+      // 填充剩余的null值
+      while (rsiValues.length < data.length) {
+        rsiValues.push(null)
+      }
+      
+      return rsiValues
+    },
+    
+    // 指标切换方法
+    /**
+     * 切换显示的技术指标
+     * @param {string} indicator 指标类型：VOLUME, MACD, BOLL, RSI
+     */
+    changeIndicator(indicator) {
+      if (this.currentIndicator === indicator) return
+      
+      this.currentIndicator = indicator
+      
+      // 清除十字线状态，因为指标改变了
+      this.showCrosshair = false
+      this.crosshairData = null
+      
+      // 重新绘制图表
+      if (!this.isDrawing && this.klineData.length > 0) {
+        this.drawChartSafely()
+      }
+    },
+    
+    // 下拉框相关方法
+    /**
+     * 切换下拉框显示状态
+     */
+    toggleDropdown() {
+      this.showDropdown = !this.showDropdown
+    },
+    
+    /**
+     * 选择指标并关闭下拉框
+     */
+    selectIndicator(indicator) {
+      this.changeIndicator(indicator)
+      this.showDropdown = false
+    },
+    
+    /**
+     * 获取当前指标的显示标签
+     */
+    getCurrentIndicatorLabel() {
+      const current = this.indicators.find(item => item.value === this.currentIndicator)
+      return current ? current.label : '成交量'
+    },
+    
+    /**
+     * 处理全局点击事件，用于关闭下拉框
+     */
+    handleGlobalClick(event) {
+      // 检查点击是否在下拉框容器外部
+      const dropdownContainer = event.target.closest('.indicator-dropdown-container')
+      if (!dropdownContainer && this.showDropdown) {
+        this.showDropdown = false
+      }
+    },
   }
 }
 </script>
@@ -2589,6 +3217,87 @@ export default {
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
+  
+  .indicator-dropdown-container {
+    position: absolute;
+    bottom: 45px; /* 定位在成交量图区域的右上角 */
+    right: 10px;
+    z-index: 20;
+    
+    .indicator-dropdown {
+      background: rgba(255, 255, 255, 0.95);
+      border: 1px solid rgba(0, 0, 0, 0.15);
+      border-radius: 4px;
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-width: 70px;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      
+      &:hover {
+        background: rgba(255, 255, 255, 1);
+        border-color: #1976d2;
+      }
+      
+      .dropdown-text {
+        font-size: 12px;
+        color: #333;
+        font-weight: 500;
+      }
+      
+      .dropdown-arrow {
+        font-size: 10px;
+        color: #666;
+        margin-left: 8px;
+        transition: transform 0.2s;
+        
+        &.active {
+          transform: rotate(180deg);
+        }
+      }
+    }
+    
+    .dropdown-menu {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: rgba(255, 255, 255, 0.98);
+      border: 1px solid rgba(0, 0, 0, 0.15);
+      border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      margin-top: 2px;
+      overflow: hidden;
+      animation: dropdown-fade-in 0.2s ease-out;
+      
+      .dropdown-item {
+        padding: 8px 12px;
+        font-size: 12px;
+        color: #333;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+        
+        &:last-child {
+          border-bottom: none;
+        }
+        
+        &:hover {
+          background: rgba(25, 118, 210, 0.1);
+          color: #1976d2;
+        }
+        
+        &.active {
+          background: #1976d2;
+          color: #fff;
+          font-weight: 500;
+        }
+      }
+    }
+  }
   
   .chart-canvas {
     width: 100%;
@@ -2649,6 +3358,56 @@ export default {
       &.price-down {
         color: #00AA44;
         font-weight: 600;
+      }
+      
+      &.ma5 {
+        color: #FFB84D;
+        font-weight: 500;
+      }
+      
+      &.ma10 {
+        color: #9C7BF5;
+        font-weight: 500;
+      }
+      
+      &.ma30 {
+        color: #00BFFF;
+        font-weight: 500;
+      }
+      
+      &.macd-dif {
+        color: #FFD700;
+        font-weight: 500;
+      }
+      
+      &.macd-dea {
+        color: #FF69B4;
+        font-weight: 500;
+      }
+      
+      &.macd-histogram {
+        color: #32CD32;
+        font-weight: 500;
+      }
+      
+      &.rsi {
+        color: #9370DB;
+        font-weight: 500;
+      }
+      
+      &.boll-upper {
+        color: #FF6347;
+        font-weight: 500;
+      }
+      
+      &.boll-middle {
+        color: #FFD700;
+        font-weight: 500;
+      }
+      
+      &.boll-lower {
+        color: #32CD32;
+        font-weight: 500;
       }
     }
   }
@@ -2751,5 +3510,16 @@ export default {
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+@keyframes dropdown-fade-in {
+  0% { 
+    opacity: 0; 
+    transform: translateY(-4px); 
+  }
+  100% { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
 }
 </style>
