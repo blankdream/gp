@@ -80,6 +80,63 @@ const CHART_CONFIG = {
     EXTRA_SPACE: 0    // 额外空间
   },
   
+  // 分时图时间轴配置
+  MINUTE_CHART: {
+    // A股交易时间配置
+    A_STOCK: {
+      TRADING_SESSIONS: [
+        { start: 570, end: 690 },   // 09:30 - 11:30 (上午)
+        { start: 780, end: 900 }    // 13:00 - 15:00 (下午)
+      ],
+      TIME_LABELS: [
+        { time: '09:30', minutes: 570 },
+        { time: '10:30', minutes: 630 },
+        { time: '11:30/13:00', isMerged: true }, // 中午休市分界点，不需要minutes
+        { time: '14:00', minutes: 840 },
+        { time: '15:00', minutes: 900 }
+      ],
+      TOTAL_TRADING_MINUTES: 240, // 4小时 = 240分钟
+      MORNING_MINUTES: 120,       // 上午2小时
+      AFTERNOON_MINUTES: 120      // 下午2小时
+    },
+    
+    // 港股交易时间配置
+    HK_STOCK: {
+      TRADING_SESSIONS: [
+        { start: 570, end: 720 },   // 09:30 - 12:00 (上午)
+        { start: 780, end: 960 }    // 13:00 - 16:00 (下午)
+      ],
+      TIME_LABELS: [
+        { time: '09:30', minutes: 570 },
+        { time: '11:00', minutes: 660 },
+        { time: '12:00/13:00', isMerged: true }, // 中午休市分界点
+        { time: '14:30', minutes: 870 },
+        { time: '16:00', minutes: 960 }
+      ],
+      TOTAL_TRADING_MINUTES: 330, // 5.5小时 = 330分钟
+      MORNING_MINUTES: 150,       // 上午2.5小时 (09:30-12:00)
+      AFTERNOON_MINUTES: 180      // 下午3小时 (13:00-16:00)
+    },
+    
+    // 美股交易时间配置（按北京时间，夏令时）
+    US_STOCK: {
+      TRADING_SESSIONS: [
+        { start: 1290, end: 1440 }, // 21:30 - 24:00 (2.5小时)
+        { start: 0, end: 240 }      // 00:00 - 04:00 (4小时)
+      ],
+      TIME_LABELS: [
+        { time: '21:30', minutes: 1290 },
+        { time: '23:00', minutes: 1380 },
+        { time: '00:00/01:00', isMerged: true }, // 跨日分界点
+        { time: '02:00', minutes: 120 },
+        { time: '04:00', minutes: 240 }
+      ],
+      TOTAL_TRADING_MINUTES: 390, // 6.5小时 = 390分钟
+      MORNING_MINUTES: 150,       // 21:30-24:00 = 2.5小时
+      AFTERNOON_MINUTES: 240      // 00:00-04:00 = 4小时
+    }
+  },
+  
   // 颜色配置
   COLORS: {
     UP: '#FF4444',        // 涨（红色）
@@ -209,6 +266,9 @@ export default {
       wheelZoomStep: CHART_CONFIG.ZOOM.WHEEL_STEP, // 滚轮每次缩放的步长
       touchZoomSensitivity: CHART_CONFIG.ZOOM.TOUCH_SENSITIVITY, // 触摸缩放敏感度
       lastWheelDirection: 1, // 用于交替滚轮方向的变量
+      
+      // 分时图专用数据
+      minuteLinePath: [], // 分时线路径数据，用于十字线交互
     }
   },
   
@@ -228,12 +288,7 @@ export default {
     // 确保组件挂载后加载数据
     this.$nextTick(() => {
       this.initChart()
-      // 直接调用加载数据方法，确保即使在特定条件下也能加载数据
-      setTimeout(() => {
-        if (this.loading && !this.klineData.length) {
-          this.loadKlineData()
-        }
-      }, 200)
+      // 移除重复的loadKlineData调用，initChart方法已经处理了数据加载
     })
     
     // 添加调试信息
@@ -275,6 +330,175 @@ export default {
     }
   },
   methods: {
+    // 时间转换辅助方法
+    
+    /**
+     * 根据股票代码识别市场类型
+     * @param {string} stockCode 股票代码
+     * @returns {string} 市场类型：A_STOCK, HK_STOCK, US_STOCK
+     */
+    getMarketType(stockCode) {
+      if (!stockCode) return 'A_STOCK'
+      
+      const code = stockCode.toUpperCase()
+      
+      // 港股：hk开头或5位数字
+      if (code.startsWith('HK') || /^\d{5}$/.test(code)) {
+        return 'HK_STOCK'
+      }
+      
+      // 美股：us开头或纯字母
+      if (code.startsWith('US') || /^[A-Z]+$/.test(code) || code.includes('.US')) {
+        return 'US_STOCK'
+      }
+      
+      // 默认A股
+      return 'A_STOCK'
+    },
+    
+    /**
+     * 获取当前市场的时间配置
+     * @returns {Object} 时间配置对象
+     */
+    getCurrentMarketConfig() {
+      const marketType = this.getMarketType(this.stockCode)
+      return CHART_CONFIG.MINUTE_CHART[marketType]
+    },
+    
+    /**
+     * 将时间字符串转换为分钟数（从00:00开始计算）
+     * @param {string} timeStr 时间字符串，如 "0930" 或 "09:30"
+     * @returns {number} 分钟数
+     */
+    timeToMinutes(timeStr) {
+      if (!timeStr) return 0
+      
+      // 处理不同格式的时间字符串
+      let cleanTime = timeStr.replace(/[^0-9]/g, '') // 移除所有非数字字符
+      if (cleanTime.length < 4) {
+        cleanTime = cleanTime.padStart(4, '0')
+      }
+      
+      const hour = parseInt(cleanTime.substring(0, 2), 10)
+      const minute = parseInt(cleanTime.substring(2, 4), 10)
+      
+      return hour * 60 + minute
+    },
+    
+    /**
+     * 根据时间计算在分时图中的X坐标位置
+     * @param {string} timeStr 时间字符串
+     * @param {number} chartWidth 图表宽度
+     * @param {number} leftPadding 左边距
+     * @returns {number} X坐标
+     */
+    getMinuteChartXPosition(timeStr, chartWidth, leftPadding) {
+      const minutes = this.timeToMinutes(timeStr)
+      const config = this.getCurrentMarketConfig()
+      const marketType = this.getMarketType(this.stockCode)
+      
+      let adjustedMinutes = minutes
+      
+      // 美股特殊处理：次日时间（0-4点）需要特殊映射到第二个交易时段
+      if (marketType === 'US_STOCK' && minutes >= 0 && minutes <= 240) {
+        // 次日时间直接对应第二个交易时段
+        const sessionMinutes = minutes - config.TRADING_SESSIONS[1].start
+        const sessionProgress = sessionMinutes / config.AFTERNOON_MINUTES // 0-1
+        const sessionWidth = chartWidth * 0.5 // 第二时段占50%宽度
+        return leftPadding + chartWidth * 0.5 + sessionProgress * sessionWidth
+      }
+      
+      // 判断属于哪个交易时段
+      if (adjustedMinutes >= config.TRADING_SESSIONS[0].start && adjustedMinutes <= config.TRADING_SESSIONS[0].end) {
+        // 第一个交易时段（上午或美股前半段）
+        const sessionMinutes = adjustedMinutes - config.TRADING_SESSIONS[0].start
+        const sessionProgress = sessionMinutes / config.MORNING_MINUTES // 0-1
+        const sessionWidth = chartWidth * 0.5 // 第一时段占50%宽度
+        return leftPadding + sessionProgress * sessionWidth
+      } else if (config.TRADING_SESSIONS[1] && 
+                 adjustedMinutes >= config.TRADING_SESSIONS[1].start && 
+                 adjustedMinutes <= config.TRADING_SESSIONS[1].end) {
+        // 第二个交易时段（下午或美股后半段）
+        const sessionMinutes = adjustedMinutes - config.TRADING_SESSIONS[1].start
+        const sessionProgress = sessionMinutes / config.AFTERNOON_MINUTES // 0-1
+        const sessionWidth = chartWidth * 0.5 // 第二时段占50%宽度
+        return leftPadding + chartWidth * 0.5 + sessionProgress * sessionWidth
+      } else {
+        // 非交易时间，返回最近的边界位置
+        if (adjustedMinutes < config.TRADING_SESSIONS[0].start) {
+          return leftPadding // 开盘前
+        } else if (config.TRADING_SESSIONS[1] && 
+                   adjustedMinutes > config.TRADING_SESSIONS[0].end && 
+                   adjustedMinutes < config.TRADING_SESSIONS[1].start) {
+          return leftPadding + chartWidth * 0.5 // 中间休息
+        } else {
+          return leftPadding + chartWidth // 收盘后
+        }
+      }
+    },
+    
+    /**
+     * 处理不同市场的时间调整（主要针对美股跨日）
+     * @param {number} minutes 原始分钟数
+     * @returns {number} 调整后的分钟数
+     */
+    adjustMinutesForMarket(minutes) {
+      const marketType = this.getMarketType(this.stockCode)
+      
+      // 美股需要处理跨日情况，但保持原始分钟数，因为我们的配置已经调整了
+      if (marketType === 'US_STOCK') {
+        // 不需要额外转换，配置中已正确定义了时间范围
+        return minutes
+      }
+      
+      return minutes
+    },
+    
+    /**
+     * 根据X坐标反推对应的时间
+     * @param {number} x X坐标
+     * @param {number} chartWidth 图表宽度
+     * @param {number} leftPadding 左边距
+     * @returns {string} 时间字符串
+     */
+    getTimeFromXPosition(x, chartWidth, leftPadding) {
+      const relativeX = x - leftPadding
+      const progress = relativeX / chartWidth
+      const config = this.getCurrentMarketConfig()
+      
+      if (progress <= 0.5) {
+        // 第一个交易时段
+        const sessionProgress = progress * 2 // 0-1
+        const sessionMinutes = sessionProgress * config.MORNING_MINUTES
+        const totalMinutes = config.TRADING_SESSIONS[0].start + sessionMinutes
+        return this.formatMinutesToTime(totalMinutes)
+      } else {
+        // 第二个交易时段
+        const sessionProgress = (progress - 0.5) * 2 // 0-1
+        const sessionMinutes = sessionProgress * config.AFTERNOON_MINUTES
+        const totalMinutes = config.TRADING_SESSIONS[1].start + sessionMinutes
+        return this.formatMinutesToTime(totalMinutes)
+      }
+    },
+    
+    /**
+     * 将分钟数格式化为时间字符串
+     * @param {number} minutes 分钟数
+     * @returns {string} 时间字符串
+     */
+    formatMinutesToTime(minutes) {
+      const marketType = this.getMarketType(this.stockCode)
+      
+      // 美股需要处理跨日显示
+      if (marketType === 'US_STOCK' && minutes > 1440) {
+        minutes = minutes - 1440 // 减去24小时，显示次日时间
+      }
+      
+      const hour = Math.floor(minutes / 60)
+      const minute = Math.floor(minutes % 60)
+      return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`
+    },
+    
     // 统一的清理方法
     cleanup() {
       this.stopMinuteRefresh()
@@ -713,15 +937,13 @@ export default {
       
       // 使用requestAnimationFrame替代setTimeout以提高性能
       this.initChartTimeout = setTimeout(() => {
-        if (!this.klineData.length && this.loading) {
+        if (!this.klineData.length) {
+          // 统一在这里加载数据，避免重复调用
           this.loadKlineData()
         } else if (this.klineData.length > 0 && this.canvasWidth > 0) {
           if (!this.isDrawing) {
             this.drawChartSafely()
           }
-        } else if (!this.klineData.length && !this.loading) {
-          // 如果没有数据且未在加载状态，则尝试加载数据
-          this.loadKlineData()
         }
         this.initChartTimeout = null // 清除引用
       }, 100) // 减少延迟时间以提高响应速度
@@ -737,6 +959,11 @@ export default {
       
       // 创建当前请求的唯一key
       const currentLoadKey = `${this.stockCode}_${this.currentPeriod}`
+      
+      // 防止重复调用：如果已经在加载相同的数据，直接返回
+      if (this.loading && this.currentLoadingPeriod === this.currentPeriod) {
+        return
+      }
       
       // 检查是否已经加载失败超过最大重试次数
       if (this.loadFailedPeriods.has(currentLoadKey)) {
@@ -1279,14 +1506,12 @@ export default {
       }
     },
     
-    // 绘制分时线
+    // 绘制分时线（使用固定时间轴）
     drawMinuteLine(ctx, data, leftPadding, topPadding, width, height, minPrice, maxPrice) {
-      if (data.length < 2) return
+      if (data.length < 1) return
       
       const priceRange = maxPrice - minPrice
       if (priceRange === 0) return // 防止除零错误
-      
-      const stepX = width / (data.length - 1)
       
       // 获取昨收价（使用第一个数据点的价格作为参考，或者可以从API获取真实昨收价）
       const yesterdayClose = data[0] ? data[0].price : 0
@@ -1307,20 +1532,34 @@ export default {
         ctx.setLineDash([])
       }
       
-      // 创建分时线路径
+      // 根据时间轴创建数据点路径
       const linePath = []
-      // 使用传统for循环替代forEach提高性能
+      
       for (let i = 0; i < data.length; i++) {
-        const item = data[i];
-        const x = leftPadding + i * stepX
+        const item = data[i]
+        if (!item || !item.time) continue
+        
+        // 使用固定时间轴计算X坐标
+        const x = this.getMinuteChartXPosition(item.time, width, leftPadding)
         const y = topPadding + height - ((item.price - minPrice) / priceRange) * height
-        linePath.push({ x, y, price: item.price })
+        
+        linePath.push({ 
+          x, 
+          y, 
+          price: item.price, 
+          time: item.time,
+          volume: item.volume || 0,
+          amount: item.amount || 0
+        })
       }
       
       if (linePath.length === 0) return
       
+      // 按X坐标排序，确保连线正确
+      linePath.sort((a, b) => a.x - b.x)
+      
       // 根据价格相对昨收的位置决定颜色
-      const currentPrice = data[data.length - 1].price
+      const currentPrice = linePath[linePath.length - 1].price
       const isUp = currentPrice >= yesterdayClose
       const lineColor = isUp ? CHART_CONFIG.COLORS.UP : CHART_CONFIG.COLORS.DOWN
       
@@ -1359,7 +1598,7 @@ export default {
       ctx.beginPath()
       
       for (let i = 0; i < linePath.length; i++) {
-        const point = linePath[i];
+        const point = linePath[i]
         if (i === 0) {
           ctx.moveTo(point.x, point.y)
         } else {
@@ -1383,8 +1622,50 @@ export default {
         ctx.stroke()
       }
       
-      // 绘制时间轴标签
-      this.drawTimeLabels(ctx, data, leftPadding, topPadding, width, height)
+      // 绘制固定时间标签
+      this.drawFixedTimeLabels(ctx, leftPadding, topPadding, width, height)
+      
+      // 存储线路径供十字线使用
+      this.minuteLinePath = linePath
+    },
+    
+    // 绘制固定时间标签（分时图专用）
+    drawFixedTimeLabels(ctx, leftPadding, topPadding, width, height) {
+      ctx.fillStyle = '#666'
+      ctx.font = CHART_CONFIG.FONTS.TIME_LABEL
+      
+      const config = this.getCurrentMarketConfig()
+      const labels = config.TIME_LABELS
+      
+      // 绘制每个时间标签
+      labels.forEach((labelConfig, index) => {
+        const y = topPadding + height + 20
+        
+        if (labelConfig.isMerged) {
+          // 合并标签：在中间位置显示
+          const x = leftPadding + width * 0.5
+          ctx.textAlign = 'center'
+          ctx.fillText(labelConfig.time, x, y)
+        } else {
+          // 普通标签：根据时间计算位置
+          const x = this.getMinuteChartXPosition(labelConfig.time, width, leftPadding)
+          
+          // 根据位置调整对齐方式
+          if (index === 0) {
+            // 第一个标签左对齐
+            ctx.textAlign = 'left'
+            ctx.fillText(labelConfig.time, leftPadding + 5, y)
+          } else if (index === labels.length - 1) {
+            // 最后一个标签右对齐
+            ctx.textAlign = 'right'
+            ctx.fillText(labelConfig.time, leftPadding + width - 5, y)
+          } else {
+            // 中间标签居中对齐
+            ctx.textAlign = 'center'
+            ctx.fillText(labelConfig.time, x, y)
+          }
+        }
+      })
     },
     
     // 绘制成交量图
@@ -1557,69 +1838,16 @@ export default {
       }
     },
     
-    // 绘制时间轴标签
+    // 绘制时间轴标签（K线图专用）
     drawTimeLabels(ctx, data, leftPadding, topPadding, width, height) {
       if (!data || data.length === 0) return
       
       ctx.fillStyle = '#666'
       ctx.font = '12px sans-serif'  // 从10px增加为12px，提高清晰度
       
-      // 分时图使用固定的时间标签
+      // 分时图使用专门的固定时间标签方法，这里只处理K线图
       if (this.currentPeriod === 'minute') {
-        const fixedTimes = ['09:30', '10:30', '13:00', '14:00', '15:00']
-        const stepX = width / (data.length - 1)
-        const labels = []
-        
-        // 为每个固定时间点找到对应的数据索引
-        fixedTimes.forEach((timeLabel, labelIndex) => {
-          const targetTime = timeLabel.replace(':', '') // 09:30 -> 0930
-          
-          // 在数据中查找最接近的时间点
-          let bestIndex = -1
-          let minTimeDiff = Infinity
-          
-          for (let i = 0; i < data.length; i++) {
-            if (data[i] && data[i].time) {
-              const dataTime = data[i].time.substring(0, 4) // 取前4位作为时间
-              const timeDiff = Math.abs(parseInt(dataTime) - parseInt(targetTime))
-              
-              if (timeDiff < minTimeDiff) {
-                minTimeDiff = timeDiff
-                bestIndex = i
-              }
-            }
-          }
-          
-          // 如果找到了匹配的时间点，添加到标签数组
-          if (bestIndex !== -1) {
-            labels.push({
-              index: bestIndex,
-              label: timeLabel,
-              x: leftPadding + bestIndex * stepX,
-              isFirst: labelIndex === 0,
-              isLast: labelIndex === fixedTimes.length - 1
-            })
-          }
-        })
-        
-        // 绘制固定时间标签
-        labels.forEach(({ x, label, isFirst, isLast }) => {
-          if (isFirst) {
-            // 第一个标签左对齐
-            ctx.textAlign = 'left'
-            ctx.fillText(label, leftPadding + 5, topPadding + height + 20)
-          } else if (isLast) {
-            // 最后一个标签右对齐
-            ctx.textAlign = 'right'
-            ctx.fillText(label, leftPadding + width - 5, topPadding + height + 20)
-          } else {
-            // 中间标签居中显示
-            ctx.textAlign = 'center'
-            ctx.fillText(label, x, topPadding + height + 20)
-          }
-        })
-        
-        return
+        return // 分时图已在 drawFixedTimeLabels 中处理
       }
       
       // K线图使用原有的动态时间标签逻辑
@@ -1966,17 +2194,44 @@ export default {
       let dataIndex, alignedX
       
       if (this.currentPeriod === 'minute') {
-        // 分时图：按连续坐标计算
-        const stepX = chartWidth / (visibleData.length - 1)
-        dataIndex = Math.round(relativeX / stepX)
-        dataIndex = Math.max(0, Math.min(visibleData.length - 1, dataIndex))
-        alignedX = leftPadding + dataIndex * stepX
+        // 分时图：使用固定时间轴的路径数据
+        if (!this.minuteLinePath || this.minuteLinePath.length === 0) {
+          return
+        }
+        
+        // 在分时线路径中找到最接近触摸点的数据点
+        let closestPoint = null
+        let minDistance = Infinity
+        
+        for (let i = 0; i < this.minuteLinePath.length; i++) {
+          const point = this.minuteLinePath[i]
+          const distance = Math.abs(point.x - touchX)
+          
+          if (distance < minDistance) {
+            minDistance = distance
+            closestPoint = point
+            dataIndex = i
+          }
+        }
+        
+        if (closestPoint) {
+          alignedX = closestPoint.x
+          this.crosshairData = {
+            time: closestPoint.time,
+            price: closestPoint.price,
+            volume: closestPoint.volume,
+            amount: closestPoint.amount
+          }
+        } else {
+          return // 没有找到合适的数据点
+        }
       } else {
         // K线图：按柱状图计算
         const barWidth = chartWidth / visibleData.length
         dataIndex = Math.floor(relativeX / barWidth)
         dataIndex = Math.max(0, Math.min(visibleData.length - 1, dataIndex))
         alignedX = leftPadding + dataIndex * barWidth + barWidth / 2
+        this.crosshairData = visibleData[dataIndex]
       }
       
       // 检查是否点击了同一个数据点，避免不必要的重绘
@@ -2180,31 +2435,22 @@ export default {
         return
       }
       
-      // 启动前先检查市场状态
-      try {
-        const data = await StockApi.getMinuteData(this.stockCode)
-        if (data && data.length > 0) {
-          // 通过最新分时数据的时间判断市场状态
-          const lastTime = data[data.length - 1].time
-          const isMarketClosed = this.isMarketClosedByTime(lastTime)
-          
-          if (isMarketClosed) {
-            // 仍然显示数据，但不启动定时器
-            this.klineData = data
-            if (!this.isDrawing) {
-              this.drawChartSafely()
-            }
-            return
-          } else {
-            // 显示初始数据
-            this.klineData = data
-            if (!this.isDrawing) {
-              this.drawChartSafely()
-            }
-          }
+      // 如果已经有分时数据，直接使用现有数据判断市场状态，避免重复请求
+      let shouldStartTimer = true
+      
+      if (this.klineData && this.klineData.length > 0) {
+        // 使用现有数据的最后一条记录判断市场状态
+        const lastTime = this.klineData[this.klineData.length - 1].time
+        const isMarketClosed = this.isMarketClosedByTime(lastTime)
+        
+        if (isMarketClosed) {
+          // 市场已关闭，不需要启动定时器
+          shouldStartTimer = false
         }
-      } catch (error) {
-        console.warn('检查市场状态失败，仍然启动定时刷新:', error)
+      }
+      
+      if (!shouldStartTimer) {
+        return
       }
       
       // 设置定时器，每3秒刷新一次分时数据（优化频率）
@@ -2260,30 +2506,19 @@ export default {
       }, CHART_CONFIG.PERFORMANCE.MINUTE_REFRESH_INTERVAL) // 使用配置的刷新间隔
     },
     
-    // 通过时间判断市场状态
+    // 通过时间判断市场状态（支持不同市场）
     isMarketClosedByTime(timeStr) {
       if (!timeStr) return true
       
       try {
-        // 解析时间 "0930" -> 9:30
-        const hour = parseInt(timeStr.substring(0, 2))
-        const minute = parseInt(timeStr.substring(2, 4))
-        const currentMinutes = hour * 60 + minute
-        
-        // A股交易时间: 9:30-11:30, 13:00-15:00
-        const morningStart = 9 * 60 + 30  // 9:30
-        const morningEnd = 11 * 60 + 30   // 11:30
-        const afternoonStart = 13 * 60    // 13:00
-        const afternoonEnd = 15 * 60      // 15:00
+        const minutes = this.timeToMinutes(timeStr)
+        const adjustedMinutes = this.adjustMinutesForMarket(minutes)
+        const config = this.getCurrentMarketConfig()
         
         // 判断是否在交易时间内
-        const inTradingTime = (currentMinutes >= morningStart && currentMinutes <= morningEnd) ||
-                             (currentMinutes >= afternoonStart && currentMinutes <= afternoonEnd)
-        
-        // 如果当前时间是15:00，表示收市
-        if (currentMinutes >= afternoonEnd) {
-          return true
-        }
+        const inTradingTime = config.TRADING_SESSIONS.some(session => 
+          adjustedMinutes >= session.start && adjustedMinutes <= session.end
+        )
         
         return !inTradingTime
       } catch (error) {

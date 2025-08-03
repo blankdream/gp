@@ -3,6 +3,27 @@
  */
 
 class StockApi {
+  // 预编译正则表达式
+  static QUOTE_REGEX = /v_([^=]+)="([^"]+)";/g
+  static US_STOCK_REGEX = /^[A-Z]+\.US$/
+  static CN_STOCK_REGEX = /~(\d{5,6})~([^~]+)~([a-z]{2}\d{5,6})~/g
+  static US_SEARCH_REGEX = /~([A-Z]{1,5})~([^~]+)~/g
+  
+  /**
+   * 处理美股代码格式
+   * @param {string} code 股票代码
+   * @returns {string} 处理后的代码
+   */
+  static processUSStockCode(code) {
+    if (code.toUpperCase().startsWith('US')) {
+      const stockCode = code.substring(2)
+      return 'us' + stockCode.toUpperCase()
+    } else if (this.US_STOCK_REGEX.test(code)) {
+      const cleanCode = code.split('.')[0]
+      return 'us' + cleanCode.toUpperCase()
+    }
+    return code
+  }
   
   /**
    * 获取实时行情数据
@@ -13,30 +34,14 @@ class StockApi {
     if (!codes) return []
     
     try {
-      // 处理美股代码 - us前缀保持小写，股票代码变大写
-      const processedCodes = codes.split(',').map(code => {
-        if (code.toUpperCase().startsWith('US')) {
-          // 如果已经是US开头：USAAPL -> usAAPL
-          const stockCode = code.substring(2) // 去掉前缀US
-          return 'us' + stockCode.toUpperCase()
-        } else if (code.match(/^[A-Z]+\.US$/)) {
-          // 如果是 AAPL.US 格式，转为 usAAPL
-          const cleanCode = code.split('.')[0]
-          return 'us' + cleanCode.toUpperCase()
-        }
-        return code
-      }).join(',')
+      const processedCodes = codes.split(',').map(code => this.processUSStockCode(code)).join(',')
       
-      
-      // 使用uni.request调用腾讯财经API
       const { data } = await uni.request({
         url: `https://qt.gtimg.cn/q=${processedCodes}`,
         method: 'GET'
       })
       
-      // 解析返回的字符串数据
-      const quotes = this.parseQuoteData(data)
-      return quotes
+      return this.parseQuoteData(data)
       
     } catch (error) {
       console.error('获取实时行情失败:', error)
@@ -53,13 +58,12 @@ class StockApi {
     if (!data || typeof data !== 'string') return []
     
     const quotes = []
-    // 匹配所有的股票数据
-    const regex = /v_([^=]+)="([^"]+)";/g
+    this.QUOTE_REGEX.lastIndex = 0
     let match
     
-    while ((match = regex.exec(data))) {
-      const stockCode = match[1] // 如：sh600000
-      const stockData = match[2] // 如：1~浦发银行~600000~10.12~...
+    while ((match = this.QUOTE_REGEX.exec(data))) {
+      const stockCode = match[1]
+      const stockData = match[2]
       
       if (stockData && stockData !== 'UNKOWN') {
         const quote = this.parseQuoteString(stockCode, stockData)
@@ -102,7 +106,6 @@ class StockApi {
         total_mv: parseFloat(arr[45]) || 0, // 总市值(万元)  
         flow_mv: parseFloat(arr[44]) || 0,  // 流通市值(万元)
         time: arr[30] || '',               // 更新时间
-        // 添加市场状态判断
         isMarketClosed: this.isMarketClosedByTime(arr[30] || '')
       }
     } catch (error) {
@@ -111,71 +114,22 @@ class StockApi {
     }
   }
   
-  /**
-   * 安全的日期构造函数，兼容iOS
-   * @param {string} dateStr 日期字符串
-   * @returns {Date} Date对象
-   */
   static createSafeDate(dateStr) {
+    if (!dateStr) return new Date()
     try {
-      // 验证输入字符串格式
-      if (!dateStr || typeof dateStr !== 'string') {
-        throw new Error(`无效的日期字符串: ${dateStr}`)
-      }
-      
-      // 先尝试原始字符串
-      let date = new Date(dateStr)
-      if (!isNaN(date.getTime())) {
-        return date
-      }
-      
-      // 如果是格式如 "2025/07/25 16:14:06" 的字符串，直接使用
-      if (dateStr.includes('/') && dateStr.includes(':')) {
-        date = new Date(dateStr)
-        if (!isNaN(date.getTime())) {
-          return date
-        }
-      }
-      
-      // 如果是格式如 "2025-07-25 16:14:06" 的字符串，转换为iOS兼容格式
-      if (dateStr.includes('-') && dateStr.includes(':')) {
-        const iOSCompatibleStr = dateStr.replace(/-/g, '/')
-        date = new Date(iOSCompatibleStr)
-        if (!isNaN(date.getTime())) {
-          return date
-        }
-      }
-      
-      // 如果还是失败，抛出错误
-      throw new Error(`无法解析日期: ${dateStr}`)
-    } catch (error) {
-      console.error('日期解析失败:', error)
-      return new Date() // 返回当前时间作为fallback
+      const date = new Date(dateStr.includes('-') ? dateStr.replace(/-/g, '/') : dateStr)
+      return isNaN(date.getTime()) ? new Date() : date
+    } catch {
+      return new Date()
     }
   }
 
-  /**
-   * 测试日期格式兼容性
-   * @returns {boolean} 测试是否通过
-   */
   static testDateCompatibility() {
     try {
-      const testTimeStr = '20250726161500' // 2025-07-26 16:15:00
-      const year = testTimeStr.substring(0, 4)
-      const month = testTimeStr.substring(4, 6)
-      const day = testTimeStr.substring(6, 8) 
-      const hour = testTimeStr.substring(8, 10)
-      const minute = testTimeStr.substring(10, 12)
-      const second = testTimeStr.substring(12, 14)
-      
-      const dateTimeString = `${year}/${month}/${day} ${hour}:${minute}:${second}`
-      const testDate = this.createSafeDate(dateTimeString)
-      
-      // 日期兼容性测试完成
-      
-      return !isNaN(testDate.getTime())
-    } catch (error) {
-      console.error('日期兼容性测试失败:', error)
+      const testStr = '20250726161500'
+      const formatted = `${testStr.substring(0, 4)}/${testStr.substring(4, 6)}/${testStr.substring(6, 8)} ${testStr.substring(8, 10)}:${testStr.substring(10, 12)}:${testStr.substring(12, 14)}`
+      return !isNaN(this.createSafeDate(formatted).getTime())
+    } catch {
       return false
     }
   }
@@ -186,104 +140,32 @@ class StockApi {
    * @returns {boolean} 是否已收市
    */
   static isMarketClosedByTime(timeStr) {
-    // 验证输入参数
-    if (!timeStr || typeof timeStr !== 'string') {
-      console.warn('时间字符串为空或无效:', timeStr)
-      return true // 如果没有时间数据，认为已收市
-    }
+    if (!timeStr) return true
     
-    // 去除可能的空格和特殊字符
-    const cleanTimeStr = timeStr.replace(/[^\d]/g, '')
-    
-    // 验证时间字符串长度和格式
-    if (cleanTimeStr.length !== 14) {
-      console.warn('时间字符串长度错误:', timeStr, '清理后:', cleanTimeStr, '长度:', cleanTimeStr.length)
-      return true // 如果长度不对，认为已收市
-    }
-    
-    // 检查是否为纯数字
-    if (!/^\d{14}$/.test(cleanTimeStr)) {
-      console.warn('时间字符串格式错误，应为14位数字:', cleanTimeStr)
-      return true // 格式错误，认为已收市
-    }
+    const clean = timeStr.replace(/[^\d]/g, '')
+    if (clean.length !== 14) return true
     
     try {
-      // 解析时间字符串: 20250725161406 -> 2025/07/25 16:14:06
-      const year = cleanTimeStr.substring(0, 4)
-      const month = cleanTimeStr.substring(4, 6)
-      const day = cleanTimeStr.substring(6, 8)
-      const hour = cleanTimeStr.substring(8, 10)
-      const minute = cleanTimeStr.substring(10, 12)
-      const second = cleanTimeStr.substring(12, 14)
+      const hour = parseInt(clean.substring(8, 10))
+      const minute = parseInt(clean.substring(10, 12))
       
-      // 验证提取的时间组件是否合理
-      const yearNum = parseInt(year, 10)
-      const monthNum = parseInt(month, 10)
-      const dayNum = parseInt(day, 10)
-      const hourNum = parseInt(hour, 10)
-      const minuteNum = parseInt(minute, 10)
-      const secondNum = parseInt(second, 10)
+      if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return true
       
-      if (yearNum < 2020 || yearNum > 2030 || 
-          monthNum < 1 || monthNum > 12 || 
-          dayNum < 1 || dayNum > 31 || 
-          hourNum < 0 || hourNum > 23 || 
-          minuteNum < 0 || minuteNum > 59 || 
-          secondNum < 0 || secondNum > 59) {
-        console.error('时间组件超出合理范围:', { year: yearNum, month: monthNum, day: dayNum, hour: hourNum, minute: minuteNum, second: secondNum })
-        return true
-      }
+      const dateStr = `${clean.substring(0, 4)}/${clean.substring(4, 6)}/${clean.substring(6, 8)} ${clean.substring(8, 10)}:${clean.substring(10, 12)}:${clean.substring(12, 14)}`
+      const updateTime = this.createSafeDate(dateStr)
       
-      // 使用iOS兼容的日期格式 yyyy/MM/dd HH:mm:ss
-      // 确保月份和日期是两位数
-      const paddedMonth = month.padStart(2, '0')
-      const paddedDay = day.padStart(2, '0')
-      const paddedHour = hour.padStart(2, '0')
-      const paddedMinute = minute.padStart(2, '0')
-      const paddedSecond = second.padStart(2, '0')
+      if (isNaN(updateTime.getTime())) return true
       
-      const dateTimeString = `${year}/${paddedMonth}/${paddedDay} ${paddedHour}:${paddedMinute}:${paddedSecond}`
-      // 日期字符串构建完成
-      
-      const updateTime = this.createSafeDate(dateTimeString)
-      
-      // 验证日期是否有效
-      if (isNaN(updateTime.getTime())) {
-        console.error('日期解析失败:', dateTimeString)
-        return true // 解析失败，认为已收市
-      }
-      
-      const now = new Date()
-      
-      // 如果更新时间超过5分钟没更新，认为已收市
-      const timeDiff = now.getTime() - updateTime.getTime()
-      const minutesDiff = Math.floor(timeDiff / (1000 * 60))
-      
-      if (minutesDiff > 5) {
-        return true
-      }
-      
-      // 根据更新时间的小时判断是否在交易时间内
-      const updateHour = hourNum
-      const updateMinute = minuteNum
+      // 超过5分钟没更新认为已收市
+      const minutesDiff = Math.floor((Date.now() - updateTime.getTime()) / 60000)
+      if (minutesDiff > 5) return true
       
       // A股交易时间: 9:30-11:30, 13:00-15:00
-      const morningStart = 9 * 60 + 30  // 9:30
-      const morningEnd = 11 * 60 + 30   // 11:30
-      const afternoonStart = 13 * 60    // 13:00
-      const afternoonEnd = 15 * 60      // 15:00
+      const currentMinutes = hour * 60 + minute
+      return !((currentMinutes >= 570 && currentMinutes <= 690) || (currentMinutes >= 780 && currentMinutes <= 900))
       
-      const currentMinutes = updateHour * 60 + updateMinute
-      
-      // 判断是否在交易时间内
-      const inTradingTime = (currentMinutes >= morningStart && currentMinutes <= morningEnd) ||
-                           (currentMinutes >= afternoonStart && currentMinutes <= afternoonEnd)
-      
-      return !inTradingTime
-      
-    } catch (error) {
-      console.error('解析时间失败:', error, '原始时间字符串:', timeStr)
-      return true // 解析失败，认为已收市
+    } catch {
+      return true
     }
   }
   
@@ -298,102 +180,50 @@ class StockApi {
     if (!code) return []
     
     try {
-      // K线数据获取开始
-      
-      // 处理美股代码 - us前缀保持小写，股票代码变大写
-      let processedCode = code
-      if (code.toUpperCase().startsWith('US')) {
-        // 如果已经是US开头：USAAPL -> usAAPL
-        const stockCode = code.substring(2) // 去掉前缀US
-        processedCode = 'us' + stockCode.toUpperCase()
-      } else if (code.match(/^[A-Z]+\.US$/)) {
-        // 如果是 AAPL.US 格式，转为 usAAPL
-        const cleanCode = code.split('.')[0]
-        processedCode = 'us' + cleanCode.toUpperCase()
-      }
-      
-      // 代码处理完成
-      
-      // 构建请求URL - 根据搜索结果优化参数
+      const processedCode = this.processUSStockCode(code)
       const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${processedCode},${period},,,${count},qfq`
-      // K线请求URL已构建
       
-      const { data } = await uni.request({
-        url: url,
-        method: 'GET',
-        timeout: 10000
-      })
+      const { data } = await uni.request({ url, method: 'GET', timeout: 10000 })
+      const stockData = data?.data?.[processedCode]
+      if (!stockData) return []
       
-      // K线API返回数据已接收
-      
-      // 详细分析返回数据结构
-      if (data) {
-        // 处理API返回数据
-        
-        if (data.data) {
-          // data.data存在，开始解析
-          
-          // 检查是否有对应的股票代码数据
-          if (data.data[processedCode]) {
-            // 找到股票数据，开始解析
-            
-            // 美股数据结构不同，直接检查day字段
-            if (data.data[processedCode].day) {
-              // 美股day数据处理
-              const klineArray = data.data[processedCode].day
-              // 美股K线数据解析
-              
-              const parsedData = this.parseKlineData(klineArray)
-              // K线数据解析完成
-              
-              return parsedData
-            }
-            
-            // 根据周期类型获取对应的数据字段（A股和港股）
-            let dataKey = ''
-            switch (period) {
-              case 'day':
-                dataKey = 'qfqday'
-                break
-              case 'week':
-                dataKey = 'qfqweek'
-                break
-              case 'month':
-                dataKey = 'qfqmonth'
-                break
-              default:
-                dataKey = 'qfqday'
-            }
-            
-            // 查找数据字段
-            
-            if (data.data[processedCode][dataKey]) {
-              const klineArray = data.data[processedCode][dataKey]
-              // 数据字段解析
-              
-              const parsedData = this.parseKlineData(klineArray)
-              // K线数据解析完成
-              
-              return parsedData
-            } else {
-              // 数据字段不存在
-            }
-          } else {
-            // 股票数据不存在
-          }
-        } else {
-          // 数据结构异常
+      // 按优先级尝试不同字段名
+      const keys = [period, `qfq${period}`, `${period}qfq`, `${period}_qfq`, `hk${period}`]
+      for (const key of keys) {
+        if (stockData[key]) {
+          return this.parseKlineData(stockData[key])
         }
-      } else {
-        // 返回数据为空
       }
       
-      // 未找到K线数据
       return []
       
     } catch (error) {
-      console.error('获取K线数据失败:', error)
+      console.error('获取K线数据失败:', error, '代码:', code, '周期:', period)
       return []
+    }
+  }
+  
+  static async debugKlineDataStructure(code, period = 'day') {
+    if (!code) return null
+    
+    try {
+      const processedCode = this.processUSStockCode(code)
+      const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${processedCode},${period},,,320,qfq`
+      
+      const { data } = await uni.request({ url, method: 'GET', timeout: 10000 })
+      
+      const stockData = data?.data?.[processedCode]
+      if (stockData) {
+        const result = { code, processedCode, period, url, availableFields: Object.keys(stockData), fullData: stockData }
+        console.log('K线调试信息:', result)
+        return result
+      }
+      
+      return { error: '未找到股票数据', data }
+      
+    } catch (error) {
+      console.error('调试K线数据失败:', error)
+      return { error: error.message }
     }
   }
   
@@ -406,53 +236,18 @@ class StockApi {
     if (!code) return []
     
     try {
-      // 获取分时数据
-      
-      const url = `https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=${code}`
-      // 分时请求URL已构建
-      
       const { data } = await uni.request({
-        url: url,
+        url: `https://web.ifzq.gtimg.cn/appstock/app/minute/query?code=${code}`,
         method: 'GET',
         timeout: 10000
       })
       
-      // 分时API返回数据已接收
+      const codeData = data?.data?.[code]
+      if (!codeData) return []
       
-      // 详细分析分时数据结构
-      if (data) {
-        // 处理分时数据
-        
-        if (data.data) {
-          // data.data存在，开始解析
-          
-          if (data.data[code]) {
-            // 找到股票分时数据
-            
-            // 检查分时数据的嵌套结构
-            if (data.data[code].data && data.data[code].data.data) {
-              // 从多层结构获取分时数据
-              const minuteStrings = data.data[code].data.data
-              // 分时数据获取完成
-              
-              // 解析分时字符串数组
-              const parsedMinuteData = this.parseMinuteStrings(minuteStrings)
-              return parsedMinuteData
-            }
-            
-            // 尝试其他可能的数据路径
-            if (data.data[code].data) {
-              // 从单层结构获取分时数据
-              return this.parseMinuteData(data.data[code].data)
-            }
-            
-            if (Array.isArray(data.data[code])) {
-              // 直接解析数组数据
-              return this.parseMinuteData(data.data[code])
-            }
-          }
-        }
-      }
+      if (codeData.data?.data) return this.parseMinuteStrings(codeData.data.data)
+      if (codeData.data) return this.parseMinuteData(codeData.data)
+      if (Array.isArray(codeData)) return this.parseMinuteData(codeData)
       
       return []
       
@@ -468,39 +263,18 @@ class StockApi {
    * @returns {Array} 解析后的K线数据
    */
   static parseKlineData(klineArray) {
-    if (!Array.isArray(klineArray)) {
-      // K线数据格式错误
-      return []
-    }
+    if (!Array.isArray(klineArray)) return []
     
-    // 开始解析K线数据
-    
-    const parsed = klineArray.map((item, index) => {
-      if (!Array.isArray(item)) {
-        // 数据项格式错误
-        return null
-      }
-      
-      const result = {
+    return klineArray.filter(item => Array.isArray(item) && item.length >= 6)
+      .map(item => ({
         date: item[0] || '',
         open: parseFloat(item[1]) || 0,
         close: parseFloat(item[2]) || 0,
-        high: parseFloat(item[3]) || 0,  // 修正：第3个位置是最高价
-        low: parseFloat(item[4]) || 0,   // 修正：第4个位置是最低价
+        high: parseFloat(item[3]) || 0,
+        low: parseFloat(item[4]) || 0,
         volume: parseInt(item[5]) || 0,
-        amount: parseFloat(item[6]) || 0,
-      }
-      
-      // 记录前几条的解析结果
-      if (index < 3) {
-        // K线数据解析
-      }
-      
-      return result
-    }).filter(item => item !== null)
-    
-    // K线数据解析完成
-    return parsed
+        amount: (item.length > 6 && typeof item[6] !== 'object') ? parseFloat(item[6]) || 0 : 0
+      }))
   }
 
   /**
@@ -509,43 +283,17 @@ class StockApi {
    * @returns {Array} 解析后的分时数据
    */
   static parseMinuteStrings(minuteStrings) {
-    if (!Array.isArray(minuteStrings)) {
-      // 分时数据格式错误
-      return []
-    }
+    if (!Array.isArray(minuteStrings)) return []
     
-    // 开始解析分时数据
-    
-    const parsed = minuteStrings.map((str, index) => {
-      if (typeof str !== 'string') {
-        // 分时数据项格式错误
-        return null
-      }
-      
-      // 按空格分割: "0930 26.65 1141 3040765.00" -> ["0930", "26.65", "1141", "3040765.00"]
-      const parts = str.trim().split(/\s+/)
-      if (parts.length < 4) {
-        // 分时数据格式错误
-        return null
-      }
-      
-      const result = {
+    return minuteStrings.filter(str => typeof str === 'string')
+      .map(str => str.trim().split(/\s+/))
+      .filter(parts => parts.length >= 4)
+      .map(parts => ({
         time: parts[0] || '',
         price: parseFloat(parts[1]) || 0,
         volume: parseInt(parts[2]) || 0,
         amount: parseFloat(parts[3]) || 0
-      }
-      
-      // 记录前几条的解析结果
-      if (index < 3) {
-        // 分时数据解析
-      }
-      
-      return result
-    }).filter(item => item !== null)
-    
-    // 分时数据解析完成
-    return parsed
+      }))
   }
 
   /**
@@ -597,43 +345,22 @@ class StockApi {
     try {
       const stocks = []
       
-      // 匹配A股和港股：~数字代码~股票名称~带前缀代码~
-      const regCN = /~(\d{5,6})~([^~]+)~([a-z]{2}\d{5,6})~/g
+      // 解析A股和港股
+      this.CN_STOCK_REGEX.lastIndex = 0
       let match
-      
-      while ((match = regCN.exec(data))) {
-        const code = match[1]      // 如：600000
-        const name = match[2]      // 如：浦发银行  
-        const fullcode = match[3]  // 如：sh600000
-        
-        // 过滤掉不需要的结果
+      while ((match = this.CN_STOCK_REGEX.exec(data))) {
+        const [, code, name, fullcode] = match
         if (code && name && fullcode) {
-          stocks.push({
-            code: code,
-            name: name.trim(),
-            fullcode: fullcode,
-            market: this.getMarketName(fullcode)
-          })
+          stocks.push({ code, name: name.trim(), fullcode, market: this.getMarketName(fullcode) })
         }
       }
       
-      // 匹配美股：~字母代码~股票名称~
-      const regUS = /~([A-Z]{1,5})~([^~]+)~/g
-      
-      while ((match = regUS.exec(data))) {
-        const code = match[1]      // 如：AAPL
-        const name = match[2]      // 如：苹果公司
-        
-        // 美股代码格式：usAAPL（us前缀小写，股票代码大写）
-        const fullcode = 'us' + code.toUpperCase()
-        
-        if (code && name && code.match(/^[A-Z]+$/)) {
-          stocks.push({
-            code: code,
-            name: name.trim(),
-            fullcode: fullcode,
-            market: '美股'
-          })
+      // 解析美股
+      this.US_SEARCH_REGEX.lastIndex = 0
+      while ((match = this.US_SEARCH_REGEX.exec(data))) {
+        const [, code, name] = match
+        if (code && name && /^[A-Z]+$/.test(code)) {
+          stocks.push({ code, name: name.trim(), fullcode: 'us' + code.toUpperCase(), market: '美股' })
         }
       }
       
