@@ -60,6 +60,91 @@
         @wheel.prevent="onWheel"
       ></canvas>
       
+      <!-- 技术指标组件（替代原来的Canvas绘制） -->
+      <VolumeIndicator
+        v-if="currentPeriod !== 'minute' && currentIndicator === 'VOLUME'"
+        :kline-data="klineData"
+        :visible-data="visibleData"
+        :width="canvasWidth"
+        :height="indicatorHeight"
+        :left-padding="leftPadding"
+        :right-padding="rightPadding"
+        :top-padding="0"
+        :bottom-padding="0"
+        :crosshair-index="crosshairDataIndex"
+        :crosshair-x="crosshairX"
+        :crosshair-y="0"
+        :show-crosshair="showCrosshair"
+        :colors="indicatorColors"
+        :style="indicatorStyle"
+        @touch-start="onIndicatorTouchStart"
+        @touch-move="onIndicatorTouchMove"
+        @touch-end="onIndicatorTouchEnd"
+      />
+      
+      <MACDIndicator
+        v-if="currentPeriod !== 'minute' && currentIndicator === 'MACD'"
+        :kline-data="klineData"
+        :visible-data="visibleData"
+        :width="canvasWidth"
+        :height="indicatorHeight"
+        :left-padding="leftPadding"
+        :right-padding="rightPadding"
+        :top-padding="0"
+        :bottom-padding="0"
+        :crosshair-index="crosshairDataIndex"
+        :crosshair-x="crosshairX"
+        :crosshair-y="0"
+        :show-crosshair="showCrosshair"
+        :colors="indicatorColors"
+        :style="indicatorStyle"
+        @touch-start="onIndicatorTouchStart"
+        @touch-move="onIndicatorTouchMove"
+        @touch-end="onIndicatorTouchEnd"
+      />
+      
+      <RSIIndicator
+        v-if="currentPeriod !== 'minute' && currentIndicator === 'RSI'"
+        :kline-data="klineData"
+        :visible-data="visibleData"
+        :width="canvasWidth"
+        :height="indicatorHeight"
+        :left-padding="leftPadding"
+        :right-padding="rightPadding"
+        :top-padding="0"
+        :bottom-padding="0"
+        :crosshair-index="crosshairDataIndex"
+        :crosshair-x="crosshairX"
+        :crosshair-y="0"
+        :show-crosshair="showCrosshair"
+        :colors="indicatorColors"
+        :style="indicatorStyle"
+        @touch-start="onIndicatorTouchStart"
+        @touch-move="onIndicatorTouchMove"
+        @touch-end="onIndicatorTouchEnd"
+      />
+      
+      <KDJIndicator
+        v-if="currentPeriod !== 'minute' && currentIndicator === 'KDJ'"
+        :kline-data="klineData"
+        :visible-data="visibleData"
+        :width="canvasWidth"
+        :height="indicatorHeight"
+        :left-padding="leftPadding"
+        :right-padding="rightPadding"
+        :top-padding="0"
+        :bottom-padding="0"
+        :crosshair-index="crosshairDataIndex"
+        :crosshair-x="crosshairX"
+        :crosshair-y="0"
+        :show-crosshair="showCrosshair"
+        :colors="indicatorColors"
+        :style="indicatorStyle"
+        @touch-start="onIndicatorTouchStart"
+        @touch-move="onIndicatorTouchMove"
+        @touch-end="onIndicatorTouchEnd"
+      />
+      
       <!-- 指标切换下拉框（仅在非分时图模式下显示，定位在成交量图右上角） -->
       <view v-if="currentPeriod !== 'minute'" class="indicator-dropdown-container">
         <view class="indicator-dropdown" @tap="toggleDropdown">
@@ -100,6 +185,13 @@
 
 <script>
 import StockApi from '@/utils/stockApi.js'
+import TechnicalCalculator from '@/utils/TechnicalCalculator.js'
+
+// 导入技术指标组件
+import VolumeIndicator from '@/components/indicators/VolumeIndicator.vue'
+import MACDIndicator from '@/components/indicators/MACDIndicator.vue'
+import RSIIndicator from '@/components/indicators/RSIIndicator.vue'
+import KDJIndicator from '@/components/indicators/KDJIndicator.vue'
 
 // K线图配置常量
 const CHART_CONFIG = {
@@ -187,12 +279,12 @@ const CHART_CONFIG = {
     MACD_DIF: '#FFD700',  // MACD DIF线（金色）
     MACD_DEA: '#FF69B4',  // MACD DEA线（粉色）
     MACD_HISTOGRAM: '#32CD32', // MACD柱状图（绿色）
-    BOLL_UPPER: '#FF6347', // 布林带上轨（红色）
-    BOLL_MIDDLE: '#FFD700', // 布林带中轨（金色）
-    BOLL_LOWER: '#32CD32', // 布林带下轨（绿色）
     RSI_LINE: '#9370DB',  // RSI线（紫色）
     RSI_OVERBOUGHT: '#FF4500', // RSI超买线（橙红色）
-    RSI_OVERSOLD: '#228B22'   // RSI超卖线（森林绿）
+    RSI_OVERSOLD: '#228B22',   // RSI超卖线（森林绿）
+    KDJ_K: '#FF6347',     // KDJ K线（红色）
+    KDJ_D: '#32CD32',     // KDJ D线（绿色）
+    KDJ_J: '#9370DB'      // KDJ J线（紫色）
   },
   
   // 性能配置
@@ -232,6 +324,12 @@ const CHART_CONFIG = {
 
 export default {
   name: "KLineChart",
+  components: {
+    VolumeIndicator,
+    MACDIndicator,
+    RSIIndicator,
+    KDJIndicator
+  },
   props: {
     stockCode: {
       type: String,
@@ -319,51 +417,132 @@ export default {
       minuteLinePath: [], // 分时线路径数据，用于十字线交互
       
       // 技术指标相关
-      currentIndicator: 'VOLUME', // 当前显示的指标：VOLUME, MACD, BOLL, RSI
+      currentIndicator: 'VOLUME', // 当前显示的指标：VOLUME, MACD, RSI, KDJ
       indicators: [
         { label: '成交量', value: 'VOLUME' },
         { label: 'MACD', value: 'MACD' },
-        { label: 'BOLL', value: 'BOLL' },
-        { label: 'RSI', value: 'RSI' }
+        { label: 'RSI', value: 'RSI' },
+        { label: 'KDJ', value: 'KDJ' }
       ],
       indicatorData: {}, // 缓存计算好的指标数据
-      showDropdown: false // 控制下拉菜单显示
+      showDropdown: false, // 控制下拉菜单显示
+      dropdownTimer: null // 下拉框自动关闭定时器
     }
   },
   
-  // 创建统一的动画帧调度器
+  computed: {
+    // 指标区域高度
+    indicatorHeight() {
+      return CHART_CONFIG.PADDING.VOLUME_HEIGHT
+    },
+    
+    // 指标颜色配置
+    indicatorColors() {
+      return {
+        UP: CHART_CONFIG.COLORS.UP,
+        DOWN: CHART_CONFIG.COLORS.DOWN,
+        NEUTRAL: CHART_CONFIG.COLORS.NEUTRAL,
+        MACD_DIF: CHART_CONFIG.COLORS.MACD_DIF,
+        MACD_DEA: CHART_CONFIG.COLORS.MACD_DEA,
+        MACD_HISTOGRAM: CHART_CONFIG.COLORS.MACD_HISTOGRAM,
+        RSI_LINE: CHART_CONFIG.COLORS.RSI_LINE,
+        RSI_OVERBOUGHT: CHART_CONFIG.COLORS.RSI_OVERBOUGHT,
+        RSI_OVERSOLD: CHART_CONFIG.COLORS.RSI_OVERSOLD,
+        KDJ_K: CHART_CONFIG.COLORS.KDJ_K,
+        KDJ_D: CHART_CONFIG.COLORS.KDJ_D,
+        KDJ_J: CHART_CONFIG.COLORS.KDJ_J
+      }
+    },
+    
+    // 指标组件样式
+    indicatorStyle() {
+      const layout = this.calculateChartLayout()
+      return {
+        position: 'absolute',
+        left: '0px',
+        top: `${layout.volumeChartTop}px`,
+        width: `${this.canvasWidth}px`,
+        height: `${this.indicatorHeight}px`,
+        zIndex: 1
+      }
+    },
+    
+    // 布局参数（供指标组件使用）
+    leftPadding() {
+      return CHART_CONFIG.PADDING.LEFT
+    },
+    
+    rightPadding() {
+      return this.getRightPadding()
+    },
+    
+    // 当前可见数据（供指标组件使用）
+    visibleData() {
+      if (!this.klineData.length) return []
+      
+      if (this.currentPeriod === 'minute') {
+        return this.klineData
+      } else {
+        const endIndex = this.klineData.length
+        const visibleCount = this.getVisibleCount()
+        const startIndex = Math.max(0, endIndex - visibleCount)
+        return this.klineData.slice(startIndex, endIndex)
+      }
+    }
+  },
+  
   created() {
-    this.animationScheduler = this.createAnimationScheduler()
+    // 完全移除 animationScheduler 初始化
   },
   mounted() {
-    if (!this.stockCode) {
-      this.errorMessage = '股票代码为空'
-      return
+    try {
+      if (!this.stockCode) {
+        this.errorMessage = '股票代码为空'
+        return
+      }
+      
+      // 强制清除Vue组件缓存，确保代码更新生效
+      this.$forceUpdate()
+      
+      // 确保组件挂载后加载数据
+      this.$nextTick(() => {
+        this.initChart()
+        // 移除重复的loadKlineData调用，initChart方法已经处理了数据加载
+      })
+      
+      // 添加全局点击事件监听器，用于关闭下拉框（仅在H5环境下）
+      // 暂时注释掉，避免小程序环境报错
+      // #ifdef H5
+      // if (typeof document !== 'undefined') {
+      //   document.addEventListener('click', this.handleGlobalClick)
+      // }
+      // #endif
+      
+      // 添加调试信息
+      // K线图组件已挂载
+    } catch (error) {
+      console.error('KLineChart mounted error:', error)
+      this.errorMessage = '组件初始化失败'
     }
-    
-    // 强制清除Vue组件缓存，确保代码更新生效
-    this.$forceUpdate()
-    
-    // 确保组件挂载后加载数据
-    this.$nextTick(() => {
-      this.initChart()
-      // 移除重复的loadKlineData调用，initChart方法已经处理了数据加载
-    })
-    
-    // 添加全局点击事件监听器，用于关闭下拉框
-    document.addEventListener('click', this.handleGlobalClick)
-    
-    // 添加调试信息
-    // K线图组件已挂载
   },
   beforeDestroy() {
     this.cleanup()
-    document.removeEventListener('click', this.handleGlobalClick)
+    // 暂时注释掉，避免小程序环境报错
+    // #ifdef H5
+    // if (typeof document !== 'undefined') {
+    //   document.removeEventListener('click', this.handleGlobalClick)
+    // }
+    // #endif
   },
   beforeUnmount() {
     // Vue 3 兼容性
     this.cleanup()
-    document.removeEventListener('click', this.handleGlobalClick)
+    // 暂时注释掉，避免小程序环境报错
+    // #ifdef H5
+    // if (typeof document !== 'undefined') {
+    //   document.removeEventListener('click', this.handleGlobalClick)
+    // }
+    // #endif
   },
   deactivated() {
     // keep-alive 组件失活时停止定时器
@@ -574,6 +753,11 @@ export default {
         clearTimeout(this.initChartTimeout)
         this.initChartTimeout = null
       }
+      // 清理下拉框定时器
+      if (this.dropdownTimer) {
+        clearTimeout(this.dropdownTimer)
+        this.dropdownTimer = null
+      }
       // 清理缩放相关定时器
       if (this.zoomThrottleTimer) {
         clearTimeout(this.zoomThrottleTimer)
@@ -624,18 +808,7 @@ export default {
       return this.currentPeriod === 'minute' ? CHART_CONFIG.PADDING.RIGHT_MINUTE : CHART_CONFIG.PADDING.RIGHT_KLINE
     },
     
-    // 创建统一的动画帧调度器
-    createAnimationScheduler() {
-      // 优先级：uni.requestAnimationFrame > wx.requestAnimationFrame > setTimeout
-      if (typeof uni !== 'undefined' && uni.requestAnimationFrame) {
-        return uni.requestAnimationFrame
-      }
-      if (typeof wx !== 'undefined' && wx.requestAnimationFrame) {
-        return wx.requestAnimationFrame
-      }
-      // 最终降级到setTimeout
-      return (callback) => setTimeout(callback, CHART_CONFIG.PERFORMANCE.ANIMATION_FRAME_FALLBACK)
-    },
+    // createAnimationScheduler方法已移除，直接使用setTimeout
     
     // 鼠标滚轮缩放事件处理
     onWheel(e) {
@@ -893,9 +1066,9 @@ export default {
       this.lastDrawTimestamp = now
       
       if (!this.isDrawing) {
-        this.animationScheduler(() => {
+        setTimeout(() => {
           this.drawChart()
-        })
+        }, 16)
       }
     },
     
@@ -1357,8 +1530,7 @@ export default {
           // 在K线和成交量之间绘制日期标签，上移5px避免遮挡成交量图
           this.drawKlineDateLabels(ctx, visibleData, leftPadding, topPadding + mainChartHeight + 25, chartWidth)
           
-          // 根据当前选择的指标绘制对应的图表
-          this.drawIndicatorChart(ctx, visibleData, leftPadding, volumeChartTop, chartWidth, volumeChartHeight)
+          // 指标图表现在由动态组件处理，不再在这里绘制
         }
         
         this.drawPriceLabels(ctx, leftPadding, topPadding, mainChartHeight, minPrice, maxPrice)
@@ -1633,194 +1805,7 @@ export default {
       })
     },
     
-    // 绘制技术指标图表
-    drawIndicatorChart(ctx, data, leftPadding, topPadding, width, height) {
-      if (!data || data.length === 0 || height <= 0) return
-      
-      switch (this.currentIndicator) {
-        case 'VOLUME':
-          this.drawVolumeChart(ctx, data, leftPadding, topPadding, width, height)
-          break
-        case 'MACD':
-          this.drawMACDChart(ctx, data, leftPadding, topPadding, width, height)
-          break
-        case 'BOLL':
-          this.drawBOLLChart(ctx, data, leftPadding, topPadding, width, height)
-          break
-        case 'RSI':
-          this.drawRSIChart(ctx, data, leftPadding, topPadding, width, height)
-          break
-        default:
-          this.drawVolumeChart(ctx, data, leftPadding, topPadding, width, height)
-      }
-    },
-    
-    // 绘制MACD图表
-    drawMACDChart(ctx, data, leftPadding, topPadding, width, height) {
-      if (!data || data.length === 0) return
-      
-      const { dif, dea, histogram } = this.calculateMACD(data)
-      const barWidth = width / data.length
-      
-      // 计算MACD数值范围
-      let minValue = 0
-      let maxValue = 0
-      
-      for (let i = 0; i < data.length; i++) {
-        if (dif[i] != null) {
-          minValue = Math.min(minValue, dif[i], dea[i], histogram[i])
-          maxValue = Math.max(maxValue, dif[i], dea[i], histogram[i])
-        }
-      }
-      
-      // 添加一些边距
-      const range = maxValue - minValue
-      const padding = range * 0.1
-      minValue -= padding
-      maxValue += padding
-      
-      if (maxValue === minValue) return
-      
-      // 绘制0轴线
-      const zeroY = topPadding + height - ((0 - minValue) / (maxValue - minValue)) * height
-      ctx.strokeStyle = 'rgba(128, 128, 128, 0.5)'
-      ctx.lineWidth = 1
-      ctx.setLineDash([2, 2])
-      ctx.beginPath()
-      ctx.moveTo(leftPadding, zeroY)
-      ctx.lineTo(leftPadding + width, zeroY)
-      ctx.stroke()
-      ctx.setLineDash([])
-      
-      // 绘制HISTOGRAM柱状图
-      for (let i = 0; i < data.length; i++) {
-        if (histogram[i] != null) {
-          const x = leftPadding + i * barWidth + barWidth / 2
-          const barHeight = Math.abs(histogram[i] / (maxValue - minValue)) * height
-          const barY = histogram[i] >= 0 ? 
-            zeroY - barHeight : zeroY
-          
-          ctx.fillStyle = histogram[i] >= 0 ? CHART_CONFIG.COLORS.UP : CHART_CONFIG.COLORS.DOWN
-          const rectWidth = Math.max(1, barWidth * 0.6)
-          ctx.fillRect(x - rectWidth / 2, barY, rectWidth, Math.abs(barHeight))
-        }
-      }
-      
-      // 绘制DIF线
-      this.drawIndicatorLine(ctx, dif, leftPadding, topPadding, width, height, minValue, maxValue, barWidth, CHART_CONFIG.COLORS.MACD_DIF, 1.5)
-      
-      // 绘制DEA线
-      this.drawIndicatorLine(ctx, dea, leftPadding, topPadding, width, height, minValue, maxValue, barWidth, CHART_CONFIG.COLORS.MACD_DEA, 1.5)
-      
-      // 绘制标签
-      this.drawIndicatorLabels(ctx, leftPadding, topPadding, height, minValue, maxValue, 'MACD')
-    },
-    
-    // 绘制BOLL图表（在主图上绘制）
-    drawBOLLChart(ctx, data, leftPadding, topPadding, width, height) {
-      // BOLL需要在主图上绘制，这里先显示成交量图
-      this.drawVolumeChart(ctx, data, leftPadding, topPadding, width, height)
-    },
-    
-    // 绘制RSI图表
-    drawRSIChart(ctx, data, leftPadding, topPadding, width, height) {
-      if (!data || data.length === 0) return
-      
-      const rsiValues = this.calculateRSI(data)
-      const barWidth = width / data.length
-      
-      // RSI范围固定为0-100
-      const minValue = 0
-      const maxValue = 100
-      
-      // 绘制超买超卖线
-      const overboughtY = topPadding + height * (1 - 70 / 100) // 70线
-      const oversoldY = topPadding + height * (1 - 30 / 100)   // 30线
-      
-      ctx.strokeStyle = CHART_CONFIG.COLORS.RSI_OVERBOUGHT
-      ctx.lineWidth = 1
-      ctx.setLineDash([3, 3])
-      ctx.beginPath()
-      ctx.moveTo(leftPadding, overboughtY)
-      ctx.lineTo(leftPadding + width, overboughtY)
-      ctx.stroke()
-      
-      ctx.strokeStyle = CHART_CONFIG.COLORS.RSI_OVERSOLD
-      ctx.beginPath()
-      ctx.moveTo(leftPadding, oversoldY)
-      ctx.lineTo(leftPadding + width, oversoldY)
-      ctx.stroke()
-      ctx.setLineDash([])
-      
-      // 绘制RSI线
-      this.drawIndicatorLine(ctx, rsiValues, leftPadding, topPadding, width, height, minValue, maxValue, barWidth, CHART_CONFIG.COLORS.RSI_LINE, 2)
-      
-      // 绘制标签
-      this.drawIndicatorLabels(ctx, leftPadding, topPadding, height, minValue, maxValue, 'RSI')
-    },
-    
-    // 通用指标线绘制函数
-    drawIndicatorLine(ctx, values, leftPadding, topPadding, width, height, minValue, maxValue, barWidth, color, lineWidth) {
-      if (!values || values.length === 0 || maxValue === minValue) return
-      
-      ctx.strokeStyle = color
-      ctx.lineWidth = lineWidth
-      ctx.beginPath()
-      
-      let pathStarted = false
-      
-      for (let i = 0; i < values.length; i++) {
-        const value = values[i]
-        
-        if (value !== null && value !== undefined && !isNaN(value)) {
-          const x = leftPadding + i * barWidth + barWidth / 2
-          const y = topPadding + height - ((value - minValue) / (maxValue - minValue)) * height
-          
-          if (!pathStarted) {
-            ctx.moveTo(x, y)
-            pathStarted = true
-          } else {
-            ctx.lineTo(x, y)
-          }
-        } else {
-          if (pathStarted) {
-            ctx.stroke()
-            ctx.beginPath()
-            pathStarted = false
-          }
-        }
-      }
-      
-      if (pathStarted) {
-        ctx.stroke()
-      }
-    },
-    
-    // 绘制指标标签
-    drawIndicatorLabels(ctx, leftPadding, topPadding, height, minValue, maxValue, indicatorType) {
-      ctx.fillStyle = '#666666'
-      ctx.font = CHART_CONFIG.FONTS.VOLUME_LABEL
-      ctx.textAlign = 'right'
-      
-      if (indicatorType === 'RSI') {
-        // RSI显示0, 30, 70, 100
-        const labels = [
-          { value: 100, text: '100' },
-          { value: 70, text: '70' },
-          { value: 30, text: '30' },
-          { value: 0, text: '0' }
-        ]
-        
-        labels.forEach(({ value, text }) => {
-          const y = topPadding + height * (1 - value / 100)
-          ctx.fillText(text, leftPadding - 5, y + 3)
-        })
-      } else {
-        // 其他指标显示最大值和最小值
-        ctx.fillText(maxValue.toFixed(3), leftPadding - 5, topPadding + 12)
-        ctx.fillText(minValue.toFixed(3), leftPadding - 5, topPadding + height - 2)
-      }
-    },
+    // 指标相关的旧方法已移至独立组件
     
     // 绘制分时线（使用固定时间轴）
     drawMinuteLine(ctx, data, leftPadding, topPadding, width, height, minPrice, maxPrice) {
@@ -1982,77 +1967,6 @@ export default {
           }
         }
       })
-    },
-    
-    // 绘制成交量图
-    drawVolumeChart(ctx, data, leftPadding, topPadding, width, height) {
-      if (!data || data.length === 0 || height <= 0) return
-      
-      const barWidth = width / data.length
-      
-      // 计算成交量范围
-      let minVolume = 0
-      let maxVolume = 0
-      
-      // 优化：只遍历一次计算最大成交量 - 使用传统for循环提高性能
-      for (let i = 0; i < data.length; i++) {
-        const volume = data[i]?.volume || 0
-        if (volume > maxVolume) {
-          maxVolume = volume
-        }
-      }
-      
-      // 如果最大成交量为0，则不绘制
-      if (maxVolume === 0) return
-      
-      // 预计算颜色
-      const upColor = CHART_CONFIG.COLORS.UP     // 红色（涨）
-      const downColor = CHART_CONFIG.COLORS.DOWN // 绿色（跌）
-      const neutralColor = CHART_CONFIG.COLORS.NEUTRAL // 默认灰色
-      
-      // 绘制成交量柱状图 - 使用传统for循环提高性能
-      for (let i = 0; i < data.length; i++) {
-        const item = data[i];
-        if (!item) continue
-        
-        const volume = item.volume || 0
-        if (volume === 0) continue // 跳过无成交量的数据
-        
-        const x = leftPadding + i * barWidth + barWidth / 2
-        
-        // 计算柱子高度（成交量越大，柱子越高）
-        const barHeight = (volume / maxVolume) * height
-        const barY = topPadding + height - barHeight
-        
-        // 优化：根据K线涨跌设置颜色
-        let barColor = neutralColor
-        
-        if (item.close && item.open) {
-          barColor = item.close > item.open ? upColor : 
-                    item.close < item.open ? downColor : neutralColor
-        } else if (i > 0 && item.close && data[i - 1]?.close) {
-          // 与前一日比较
-          barColor = item.close > data[i - 1].close ? upColor :
-                    item.close < data[i - 1].close ? downColor : neutralColor
-        }
-        
-        // 绘制成交量柱
-        ctx.fillStyle = barColor
-        const rectWidth = Math.max(0.5, barWidth * 0.8) // 柱子宽度，最小0.5像素
-        ctx.fillRect(x - rectWidth / 2, barY, rectWidth, barHeight)
-      }
-      
-      // 绘制成交量标签（在左侧显示最大成交量）
-      ctx.fillStyle = '#666666'
-      ctx.font = CHART_CONFIG.FONTS.VOLUME_LABEL  // 使用配置的字体
-      ctx.textAlign = 'right'
-      
-      // 显示最大成交量 - 优化位置，确保在边距内显示
-      const maxVolumeStr = this.formatVolumeShort(maxVolume)
-      ctx.fillText(maxVolumeStr, leftPadding - 5, topPadding + 12)  // 在左边距内显示
-      
-      // 显示0
-      ctx.fillText('0', leftPadding - 5, topPadding + height - 2)  // 在左边距内显示
     },
     
     // 格式化成交量显示（简短版本）
@@ -2398,9 +2312,9 @@ export default {
           
           // 节流处理十字线拖拽更新
           this.crosshairDragThrottleTimer = setTimeout(() => {
-            this.animationScheduler(() => {
+            setTimeout(() => {
               this.updateCrosshair(touchX, touchY)
-            })
+            }, 16)
           }, CHART_CONFIG.INTERACTION.CROSSHAIR_DRAG_THROTTLE)
         }
       }
@@ -2429,8 +2343,8 @@ export default {
         return
       }
       
-      // 微信小程序环境使用统一的动画调度器
-      this.animationScheduler(() => {
+      // 微信小程序环境使用setTimeout替代
+      setTimeout(() => {
         // 只有在点击（非拖拽）时才处理十字线
         if (!this.isDragging) {
           const currentTime = Date.now()
@@ -2467,7 +2381,7 @@ export default {
         
         // 重置拖拽状态
         this.isDragging = false
-      })
+      }, 16) // setTimeout结束
     },
     
     // 更新十字线位置和数据
@@ -3137,12 +3051,32 @@ export default {
      */
     toggleDropdown() {
       this.showDropdown = !this.showDropdown
+      
+      // #ifndef H5
+      // 在非H5环境下，设置定时器自动关闭下拉框
+      if (this.showDropdown) {
+        // 清除之前的定时器
+        if (this.dropdownTimer) {
+          clearTimeout(this.dropdownTimer)
+        }
+        // 5秒后自动关闭下拉框
+        this.dropdownTimer = setTimeout(() => {
+          this.showDropdown = false
+        }, 5000)
+      }
+      // #endif
     },
     
     /**
      * 选择指标并关闭下拉框
      */
     selectIndicator(indicator) {
+      // 清除自动关闭定时器
+      if (this.dropdownTimer) {
+        clearTimeout(this.dropdownTimer)
+        this.dropdownTimer = null
+      }
+      
       this.changeIndicator(indicator)
       this.showDropdown = false
     },
@@ -3159,11 +3093,31 @@ export default {
      * 处理全局点击事件，用于关闭下拉框
      */
     handleGlobalClick(event) {
-      // 检查点击是否在下拉框容器外部
-      const dropdownContainer = event.target.closest('.indicator-dropdown-container')
-      if (!dropdownContainer && this.showDropdown) {
-        this.showDropdown = false
-      }
+      // 暂时注释掉整个方法，避免小程序环境报错
+      // #ifdef H5
+      // if (event && event.target && typeof event.target.closest === 'function') {
+      //   const dropdownContainer = event.target.closest('.indicator-dropdown-container')
+      //   if (!dropdownContainer && this.showDropdown) {
+      //     this.showDropdown = false
+      //   }
+      // }
+      // #endif
+    },
+    
+    // 指标组件事件处理
+    onIndicatorTouchStart(event) {
+      // 转发触摸事件到主图表处理逻辑
+      this.onTouchStart(event)
+    },
+    
+    onIndicatorTouchMove(event) {
+      // 转发触摸事件到主图表处理逻辑
+      this.onTouchMove(event)
+    },
+    
+    onIndicatorTouchEnd(event) {
+      // 转发触摸事件到主图表处理逻辑
+      this.onTouchEnd(event)
     },
   }
 }
