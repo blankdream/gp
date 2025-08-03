@@ -197,6 +197,24 @@ import MACDIndicator from '@/components/indicators/MACDIndicator.vue'
 import RSIIndicator from '@/components/indicators/RSIIndicator.vue'
 import KDJIndicator from '@/components/indicators/KDJIndicator.vue'
 
+// 常用数值常量
+const COMMON_VALUES = {
+  DROPDOWN_AUTO_CLOSE_DELAY: 5000, // 下拉框自动关闭延迟
+  CROSSHAIR_LABEL_WIDTH: 50,       // 十字线标签宽度
+  CROSSHAIR_LABEL_HEIGHT: 20,      // 十字线标签高度
+  CROSSHAIR_OFFSET: 10,            // 十字线偏移量
+  PRICE_LABEL_MARGIN: 30,          // 价格标签边距
+  CHART_MARGIN: 20,                // 图表边距
+  LABEL_MIN_DISTANCE: 50,          // 标签最小间距
+  DEFAULT_TIMEOUT: 100,            // 默认超时时间
+  TOUCH_ZOOM_SCALE_FACTOR: 100,    // 触摸缩放比例因子
+  PERCENTAGE_MULTIPLIER: 100,      // 百分比乘数
+  RSI_MAX_VALUE: 100,              // RSI最大值
+  WEEK_KLINE_COUNT: 100,           // 周K线默认显示数量
+  DAY_KLINE_COUNT: 50,             // 日K线默认显示数量
+  MINUTE_KLINE_COUNT: 30           // 分钟K线默认显示数量
+}
+
 // K线图配置常量
 const CHART_CONFIG = {
   // 布局配置
@@ -364,7 +382,7 @@ export default {
       startX: 0,
       startY: 0,
       translateX: 0,
-      visibleCount: 50, // 可见的K线数量（日K线默认）
+      visibleCount: COMMON_VALUES.DAY_KLINE_COUNT, // 可见的K线数量（日K线默认）
       isDrawing: false, // 防止重复绘制
       lastDrawnDataLength: 0, // 记录上次绘制的数据长度
       lastDrawnPeriod: '', // 记录上次绘制的周期
@@ -402,11 +420,11 @@ export default {
       chartInitialized: false,
       initChartTimeout: null,
       // 缩放功能相关
-      currentVisibleCount: 50, // 当前可见的K线数量（动态调整）
+      currentVisibleCount: COMMON_VALUES.DAY_KLINE_COUNT, // 当前可见的K线数量（动态调整）
       isZooming: false, // 是否正在缩放
       lastDistance: 0, // 上次双指间距离
       zoomStartDistance: 0, // 缩放开始时的双指距离
-      zoomStartVisibleCount: 50, // 缩放开始时的可见数量
+      zoomStartVisibleCount: COMMON_VALUES.DAY_KLINE_COUNT, // 缩放开始时的可见数量
       zoomThrottleTimer: null, // 缩放节流定时器
       crosshairDragThrottleTimer: null, // 十字线拖拽节流定时器
       // 缩放边界设置
@@ -552,12 +570,6 @@ export default {
       
       // 添加全局点击事件监听器，用于关闭下拉框（仅在H5环境下）
       // 暂时注释掉，避免小程序环境报错
-      // #ifdef H5
-      // if (typeof document !== 'undefined') {
-      //   document.addEventListener('click', this.handleGlobalClick)
-      // }
-      // #endif
-      
       // 添加调试信息
       // K线图组件已挂载
     } catch (error) {
@@ -567,22 +579,10 @@ export default {
   },
   beforeDestroy() {
     this.cleanup()
-    // 暂时注释掉，避免小程序环境报错
-    // #ifdef H5
-    // if (typeof document !== 'undefined') {
-    //   document.removeEventListener('click', this.handleGlobalClick)
-    // }
-    // #endif
   },
   beforeUnmount() {
     // Vue 3 兼容性
     this.cleanup()
-    // 暂时注释掉，避免小程序环境报错
-    // #ifdef H5
-    // if (typeof document !== 'undefined') {
-    //   document.removeEventListener('click', this.handleGlobalClick)
-    // }
-    // #endif
   },
   deactivated() {
     // keep-alive 组件失活时停止定时器
@@ -600,8 +600,7 @@ export default {
         this.stopMinuteRefresh()
         
         if (this.loadKlineDataTimer) {
-          clearTimeout(this.loadKlineDataTimer)
-          this.loadKlineDataTimer = null
+        this.clearTimer('loadKlineDataTimer')
         }
         
         this.lastSuccessfulLoadKey = ''
@@ -821,31 +820,21 @@ export default {
     },
     
     // 统一的清理方法
+    // 清理指定计时器的通用方法
+    clearTimer(timerName) {
+      if (this[timerName]) {
+        clearTimeout(this[timerName])
+        this[timerName] = null
+      }
+    },
+
     cleanup() {
       this.stopMinuteRefresh()
-      if (this.loadKlineDataTimer) {
-        clearTimeout(this.loadKlineDataTimer)
-        this.loadKlineDataTimer = null
-      }
-      if (this.initChartTimeout) {
-        clearTimeout(this.initChartTimeout)
-        this.initChartTimeout = null
-      }
-      // 清理下拉框定时器
-      if (this.dropdownTimer) {
-        clearTimeout(this.dropdownTimer)
-        this.dropdownTimer = null
-      }
-      // 清理缩放相关定时器
-      if (this.zoomThrottleTimer) {
-        clearTimeout(this.zoomThrottleTimer)
-        this.zoomThrottleTimer = null
-      }
-      // 清理十字线拖拽节流定时器
-      if (this.crosshairDragThrottleTimer) {
-        clearTimeout(this.crosshairDragThrottleTimer)
-        this.crosshairDragThrottleTimer = null
-      }
+      this.clearTimer('loadKlineDataTimer')
+      this.clearTimer('initChartTimeout')
+      this.clearTimer('dropdownTimer')
+      this.clearTimer('zoomThrottleTimer')
+      this.clearTimer('crosshairDragThrottleTimer')
     },
     
     // 计算图表布局参数
@@ -935,7 +924,7 @@ export default {
             this.lastWheelDirection = 1
           }
           this.lastWheelDirection *= -1  // 交替方向
-          delta = this.lastWheelDirection * 100
+          delta = this.lastWheelDirection * COMMON_VALUES.DEFAULT_TIMEOUT
         }
       }
       
@@ -1003,7 +992,7 @@ export default {
       } else {
         // 其他来源：使用节流重绘
         if (this.zoomThrottleTimer) {
-          clearTimeout(this.zoomThrottleTimer)
+          this.clearTimer('zoomThrottleTimer')
         }
         this.zoomThrottleTimer = setTimeout(() => {
           if (!this.isDrawing && this.klineData.length > 0) {
@@ -1447,8 +1436,7 @@ export default {
       }
       
       if (this.loadKlineDataTimer) {
-        clearTimeout(this.loadKlineDataTimer)
-        this.loadKlineDataTimer = null
+        this.clearTimer('loadKlineDataTimer')
       }
       
       this.stopMinuteRefresh()
@@ -1464,20 +1452,20 @@ export default {
       // 重置为每个周期的默认可见数量，并设置对应的最小值
       switch (period) {
         case 'day':
-          this.currentVisibleCount = 50
-          this.minVisibleCount = 50  // 最少显示50根日K线
+          this.currentVisibleCount = COMMON_VALUES.DAY_KLINE_COUNT
+          this.minVisibleCount = COMMON_VALUES.DAY_KLINE_COUNT  // 最少显示50根日K线
           break
         case 'week':
           this.currentVisibleCount = 40
           this.minVisibleCount = 40  // 最少显示40根周K线
           break
         case 'month':
-          this.currentVisibleCount = 30
+          this.currentVisibleCount = COMMON_VALUES.MINUTE_KLINE_COUNT
           this.minVisibleCount = CHART_CONFIG.ZOOM.MIN_VISIBLE_COUNT  // 最少显示30根月K线
           break
         default:
-          this.currentVisibleCount = 50
-          this.minVisibleCount = 50
+          this.currentVisibleCount = COMMON_VALUES.DAY_KLINE_COUNT
+          this.minVisibleCount = COMMON_VALUES.DAY_KLINE_COUNT
       }
       
       // 完全重置绘制状态和缓存
@@ -1494,8 +1482,7 @@ export default {
       this.zoomStartDistance = 0
       this.zoomStartVisibleCount = 0
       if (this.zoomThrottleTimer) {
-        clearTimeout(this.zoomThrottleTimer)
-        this.zoomThrottleTimer = null
+        this.clearTimer('zoomThrottleTimer')
       }
       
       // 重置Canvas上下文，强制重新初始化
@@ -1651,16 +1638,16 @@ export default {
             
             const priceText = this.formatPrice(currentPrice)
             ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
-            ctx.fillRect(5, this.crosshairY - 10, 50, 20)
+            ctx.fillRect(5, this.crosshairY - COMMON_VALUES.CROSSHAIR_OFFSET, COMMON_VALUES.CROSSHAIR_LABEL_WIDTH, COMMON_VALUES.CROSSHAIR_LABEL_HEIGHT)
             ctx.fillStyle = '#ffffff'
             ctx.font = CHART_CONFIG.FONTS.CROSSHAIR_LABEL
             ctx.textAlign = 'center'
-            ctx.fillText(priceText, 30, this.crosshairY + 3)
+            ctx.fillText(priceText, COMMON_VALUES.PRICE_LABEL_MARGIN, this.crosshairY + 3)
             
             ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
-            ctx.fillRect(leftPadding + chartWidth + 5, this.crosshairY - 10, 50, 20)
+            ctx.fillRect(leftPadding + chartWidth + 5, this.crosshairY - COMMON_VALUES.CROSSHAIR_OFFSET, COMMON_VALUES.CROSSHAIR_LABEL_WIDTH, COMMON_VALUES.CROSSHAIR_LABEL_HEIGHT)
             ctx.fillStyle = '#ffffff'
-            ctx.fillText(priceText, leftPadding + chartWidth + 30, this.crosshairY + 3)
+            ctx.fillText(priceText, leftPadding + chartWidth + COMMON_VALUES.PRICE_LABEL_MARGIN, this.crosshairY + 3)
           }
         } else {
           // 十字线绘制条件不满足
@@ -2262,7 +2249,7 @@ export default {
           for (let i = 0; i <= 8; i++) {
             const price = minPrice + (maxPrice - minPrice) * (1 - i / 8)
             const y = topPadding + (height / 8) * i
-            const change = ((price - yesterdayClose) / yesterdayClose) * 100
+            const change = ((price - yesterdayClose) / yesterdayClose) * COMMON_VALUES.PERCENTAGE_MULTIPLIER
             
             // 根据涨跌情况设置颜色
             if (change > 0) {
@@ -2336,7 +2323,7 @@ export default {
         
         // 计算缩放比例
         const distanceChange = currentDistance - this.zoomStartDistance
-        const scaleFactor = 1 + (distanceChange * this.touchZoomSensitivity / 100)
+        const scaleFactor = 1 + (distanceChange * this.touchZoomSensitivity / COMMON_VALUES.TOUCH_ZOOM_SCALE_FACTOR)
         
         // 计算新的可见数量
         let newVisibleCount = Math.round(this.zoomStartVisibleCount / scaleFactor)
@@ -2352,7 +2339,7 @@ export default {
           
           // 节流重绘
           if (this.zoomThrottleTimer) {
-            clearTimeout(this.zoomThrottleTimer)
+            this.clearTimer('zoomThrottleTimer')
           }
           this.zoomThrottleTimer = setTimeout(() => {
             if (!this.isDrawing && this.klineData.length > 0) {
@@ -2386,7 +2373,7 @@ export default {
         if (this.showCrosshair && this.isDragging) {
           // 清除之前的节流定时器
           if (this.crosshairDragThrottleTimer) {
-            clearTimeout(this.crosshairDragThrottleTimer)
+            this.clearTimer('crosshairDragThrottleTimer')
           }
           
           // 节流处理十字线拖拽更新
@@ -2403,14 +2390,12 @@ export default {
     onTouchEnd(e) {
       // 清除缩放节流定时器
       if (this.zoomThrottleTimer) {
-        clearTimeout(this.zoomThrottleTimer)
-        this.zoomThrottleTimer = null
+        this.clearTimer('zoomThrottleTimer')
       }
       
       // 清除十字线拖拽节流定时器
       if (this.crosshairDragThrottleTimer) {
-        clearTimeout(this.crosshairDragThrottleTimer)
-        this.crosshairDragThrottleTimer = null
+        this.clearTimer('crosshairDragThrottleTimer')
       }
       
       // 如果是缩放操作结束
@@ -2646,19 +2631,19 @@ export default {
       // 在左侧显示价格
       const priceText = this.formatPrice(currentPrice)
       ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
-      ctx.fillRect(5, this.crosshairY - 10, 50, 20)
+      ctx.fillRect(5, this.crosshairY - COMMON_VALUES.CROSSHAIR_OFFSET, COMMON_VALUES.CROSSHAIR_LABEL_WIDTH, COMMON_VALUES.CROSSHAIR_LABEL_HEIGHT)
       ctx.fillStyle = '#ffffff'
       ctx.font = '12px sans-serif'  // 从10px增加为12px，提高清晰度
       ctx.textAlign = 'center'
-      ctx.fillText(priceText, 30, this.crosshairY + 3)
+      ctx.fillText(priceText, COMMON_VALUES.PRICE_LABEL_MARGIN, this.crosshairY + 3)
       
       // 在右侧显示价格和涨跌幅
       ctx.fillStyle = 'rgba(102, 102, 102, 0.8)'
-      ctx.fillRect(leftPadding + chartWidth + 5, this.crosshairY - 15, 50, 30)
+      ctx.fillRect(leftPadding + chartWidth + 5, this.crosshairY - 15, COMMON_VALUES.CROSSHAIR_LABEL_WIDTH, 30)
       ctx.fillStyle = '#ffffff'
       
       // 显示价格
-      ctx.fillText(priceText, leftPadding + chartWidth + 30, this.crosshairY - 2)
+      ctx.fillText(priceText, leftPadding + chartWidth + COMMON_VALUES.PRICE_LABEL_MARGIN, this.crosshairY - 2)
       
       // 如果是分时图，显示涨跌幅
       if (this.currentPeriod === 'minute' && this.klineData.length > 0) {
@@ -2696,7 +2681,7 @@ export default {
       
       // 计算涨跌幅
       const change = currentPrice - yesterdayClose
-      const percent = (change / yesterdayClose) * 100
+      const percent = (change / yesterdayClose) * COMMON_VALUES.PERCENTAGE_MULTIPLIER
       return percent > 0 ? `+${percent.toFixed(2)}%` : `${percent.toFixed(2)}%`
     },
     
@@ -2710,7 +2695,7 @@ export default {
     formatKlinePriceChange(data) {
       if (!data || !data.open || !data.close) return '--'
       const change = data.close - data.open
-      const percent = (change / data.open) * 100
+      const percent = (change / data.open) * COMMON_VALUES.PERCENTAGE_MULTIPLIER
       return percent > 0 ? `+${percent.toFixed(2)}%` : `${percent.toFixed(2)}%`
     },
     
@@ -3136,12 +3121,12 @@ export default {
       if (this.showDropdown) {
         // 清除之前的定时器
         if (this.dropdownTimer) {
-          clearTimeout(this.dropdownTimer)
+          this.clearTimer('dropdownTimer')
         }
         // 5秒后自动关闭下拉框
         this.dropdownTimer = setTimeout(() => {
           this.showDropdown = false
-        }, 5000)
+        }, COMMON_VALUES.DROPDOWN_AUTO_CLOSE_DELAY)
       }
       // #endif
     },
@@ -3152,8 +3137,7 @@ export default {
     selectIndicator(indicator) {
       // 清除自动关闭定时器
       if (this.dropdownTimer) {
-        clearTimeout(this.dropdownTimer)
-        this.dropdownTimer = null
+        this.clearTimer('dropdownTimer')
       }
       
       this.changeIndicator(indicator)
@@ -3168,20 +3152,6 @@ export default {
       return current ? current.label : '成交量'
     },
     
-    /**
-     * 处理全局点击事件，用于关闭下拉框
-     */
-    handleGlobalClick(event) {
-      // 暂时注释掉整个方法，避免小程序环境报错
-      // #ifdef H5
-      // if (event && event.target && typeof event.target.closest === 'function') {
-      //   const dropdownContainer = event.target.closest('.indicator-dropdown-container')
-      //   if (!dropdownContainer && this.showDropdown) {
-      //     this.showDropdown = false
-      //   }
-      // }
-      // #endif
-    },
     
     // 指标组件事件处理
     onIndicatorTouchStart(event) {
