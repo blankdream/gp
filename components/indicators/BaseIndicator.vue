@@ -120,9 +120,11 @@ export default {
   
   watch: {
     visibleData: {
-      handler() {
-        this.calculateIndicatorData()
-        this.drawIndicator()
+      handler(newData, oldData) {
+        if (typeof this.calculateIndicatorData === 'function') {
+          this.calculateIndicatorData()
+          this.drawIndicator()
+        }
       },
       deep: true
     },
@@ -166,9 +168,14 @@ export default {
                 this.canvas = canvas
                 this.ctx = ctx
                 
-                // 初始化完成后计算数据并绘制
-                this.calculateIndicatorData()
-                this.drawIndicator()
+                // 触发初始化完成事件，让子组件可以绑定方法
+                this.$emit('indicator-ready')
+                
+                // 延迟一点时间让子组件绑定方法，然后开始计算
+                this.$nextTick(() => {
+                  this.calculateIndicatorData()
+                  this.drawIndicator()
+                })
               }
             }
           })

@@ -2,6 +2,7 @@
   <BaseIndicator
     v-bind="$props"
     ref="baseIndicator"
+    @indicator-ready="onIndicatorReady"
     @touch-start="$emit('touch-start', $event)"
     @touch-move="$emit('touch-move', $event)"
     @touch-end="$emit('touch-end', $event)"
@@ -38,35 +39,37 @@ export default {
   },
   
   mounted() {
-    // 等待基类初始化完成
-    this.$nextTick(() => {
-      if (this.$refs.baseIndicator) {
-        // 重写基类的方法
-        this.$refs.baseIndicator.calculateIndicatorData = this.calculateIndicatorData.bind(this)
-        this.$refs.baseIndicator.drawIndicatorContent = this.drawIndicatorContent.bind(this)
-        this.$refs.baseIndicator.drawLabels = this.drawLabels.bind(this)
-        this.$refs.baseIndicator.getCrosshairValue = this.getCrosshairValue.bind(this)
-      }
-    })
+    // 方法绑定现在通过 indicator-ready 事件处理
   },
   
   methods: {
+    // BaseIndicator初始化完成回调
+    onIndicatorReady() {
+      // 绑定自定义方法
+      this.$refs.baseIndicator.calculateIndicatorData = this.calculateIndicatorData.bind(this)
+      this.$refs.baseIndicator.drawIndicatorContent = this.drawIndicatorContent.bind(this)
+      this.$refs.baseIndicator.drawLabels = this.drawLabels.bind(this)
+      this.$refs.baseIndicator.getCrosshairValue = this.getCrosshairValue.bind(this)
+    },
+    
     // 计算RSI数据
     calculateIndicatorData() {
-      if (!this.visibleData || this.visibleData.length === 0) {
+      const baseIndicator = this.$refs.baseIndicator
+      if (!baseIndicator || !baseIndicator.visibleData || baseIndicator.visibleData.length === 0) {
         this.rsiData = []
         return
       }
       
       // 计算RSI指标
-      this.rsiData = TechnicalCalculator.calculateRSI(this.visibleData, this.period)
+      this.rsiData = TechnicalCalculator.calculateRSI(baseIndicator.visibleData, this.period)
     },
     
     // 绘制RSI图表
     drawIndicatorContent() {
-      if (!this.$refs.baseIndicator.ctx || !this.rsiData.length) return
+      const baseIndicator = this.$refs.baseIndicator
+      if (!baseIndicator || !baseIndicator.ctx || !this.rsiData.length) return
       
-      const ctx = this.$refs.baseIndicator.ctx
+      const ctx = baseIndicator.ctx
       
       // 绘制超买超卖线
       this.drawOverboughtOversoldLines()
@@ -77,12 +80,15 @@ export default {
     
     // 绘制超买超卖线
     drawOverboughtOversoldLines() {
-      const ctx = this.$refs.baseIndicator.ctx
+      const baseIndicator = this.$refs.baseIndicator
+      if (!baseIndicator || !baseIndicator.ctx) return
+      
+      const ctx = baseIndicator.ctx
       
       // 70线（超买线）
-      const overboughtY = this.topPadding + this.$refs.baseIndicator.chartHeight * (1 - 70 / 100)
+      const overboughtY = baseIndicator.topPadding + baseIndicator.chartHeight * (1 - 70 / 100)
       // 30线（超卖线）
-      const oversoldY = this.topPadding + this.$refs.baseIndicator.chartHeight * (1 - 30 / 100)
+      const oversoldY = baseIndicator.topPadding + baseIndicator.chartHeight * (1 - 30 / 100)
       
       ctx.lineWidth = 1
       ctx.setLineDash([3, 3])
@@ -90,15 +96,15 @@ export default {
       // 绘制70线
       ctx.strokeStyle = this.getColor('RSI_OVERBOUGHT')
       ctx.beginPath()
-      ctx.moveTo(this.leftPadding, overboughtY)
-      ctx.lineTo(this.leftPadding + this.$refs.baseIndicator.chartWidth, overboughtY)
+      ctx.moveTo(baseIndicator.leftPadding, overboughtY)
+      ctx.lineTo(baseIndicator.leftPadding + baseIndicator.chartWidth, overboughtY)
       ctx.stroke()
       
       // 绘制30线
       ctx.strokeStyle = this.getColor('RSI_OVERSOLD')
       ctx.beginPath()
-      ctx.moveTo(this.leftPadding, oversoldY)
-      ctx.lineTo(this.leftPadding + this.$refs.baseIndicator.chartWidth, oversoldY)
+      ctx.moveTo(baseIndicator.leftPadding, oversoldY)
+      ctx.lineTo(baseIndicator.leftPadding + baseIndicator.chartWidth, oversoldY)
       ctx.stroke()
       
       ctx.setLineDash([])
@@ -106,10 +112,11 @@ export default {
     
     // 绘制RSI线
     drawRSILine() {
-      if (!this.rsiData || this.rsiData.length === 0) return
+      const baseIndicator = this.$refs.baseIndicator
+      if (!baseIndicator || !baseIndicator.ctx || !this.rsiData || this.rsiData.length === 0) return
       
-      const ctx = this.$refs.baseIndicator.ctx
-      const barWidth = this.$refs.baseIndicator.barWidth
+      const ctx = baseIndicator.ctx
+      const barWidth = baseIndicator.barWidth
       
       ctx.strokeStyle = this.getColor('RSI_LINE')
       ctx.lineWidth = 2
@@ -121,8 +128,8 @@ export default {
         const value = this.rsiData[i]
         
         if (value !== null && value !== undefined && !isNaN(value)) {
-          const x = this.leftPadding + i * barWidth + barWidth / 2
-          const y = this.topPadding + this.$refs.baseIndicator.chartHeight * (1 - value / 100)
+          const x = baseIndicator.leftPadding + i * barWidth + barWidth / 2
+          const y = baseIndicator.topPadding + baseIndicator.chartHeight * (1 - value / 100)
           
           if (!pathStarted) {
             ctx.moveTo(x, y)
@@ -146,9 +153,10 @@ export default {
     
     // 绘制RSI标签
     drawLabels() {
-      if (!this.$refs.baseIndicator.ctx) return
+      const baseIndicator = this.$refs.baseIndicator
+      if (!baseIndicator || !baseIndicator.ctx) return
       
-      const ctx = this.$refs.baseIndicator.ctx
+      const ctx = baseIndicator.ctx
       
       ctx.fillStyle = '#666666'
       ctx.font = '11px sans-serif'
@@ -163,25 +171,27 @@ export default {
       ]
       
       labels.forEach(({ value, text }) => {
-        const y = this.topPadding + this.$refs.baseIndicator.chartHeight * (1 - value / 100)
-        ctx.fillText(text, this.leftPadding - 5, y + 3)
+        const y = baseIndicator.topPadding + baseIndicator.chartHeight * (1 - value / 100)
+        ctx.fillText(text, baseIndicator.leftPadding - 5, y + 3)
       })
     },
     
     // 获取颜色
     getColor(colorKey) {
+      const baseIndicator = this.$refs.baseIndicator
       const colorMap = {
         'RSI_LINE': '#9370DB',
         'RSI_OVERBOUGHT': '#FF4500',
         'RSI_OVERSOLD': '#228B22'
       }
-      return this.colors[colorKey] || colorMap[colorKey] || '#666666'
+      return (baseIndicator && baseIndicator.colors && baseIndicator.colors[colorKey]) || colorMap[colorKey] || '#666666'
     },
     
     // 获取十字线位置的RSI数值
     getCrosshairValue() {
-      if (this.crosshairIndex >= 0 && this.crosshairIndex < this.rsiData.length) {
-        const rsiValue = this.rsiData[this.crosshairIndex]
+      const baseIndicator = this.$refs.baseIndicator
+      if (baseIndicator && baseIndicator.crosshairIndex >= 0 && baseIndicator.crosshairIndex < this.rsiData.length) {
+        const rsiValue = this.rsiData[baseIndicator.crosshairIndex]
         return {
           rsi: rsiValue,
           rsiStr: TechnicalCalculator.formatValue(rsiValue, 2),

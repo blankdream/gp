@@ -2,6 +2,7 @@
   <BaseIndicator
     v-bind="$props"
     ref="baseIndicator"
+    @indicator-ready="onIndicatorReady"
     @touch-start="$emit('touch-start', $event)"
     @touch-move="$emit('touch-move', $event)"
     @touch-end="$emit('touch-end', $event)"
@@ -47,19 +48,25 @@ export default {
   },
   
   mounted() {
-    // 等待基类初始化完成
-    this.$nextTick(() => {
-      if (this.$refs.baseIndicator) {
-        // 重写基类的方法
-        this.$refs.baseIndicator.calculateIndicatorData = this.calculateIndicatorData.bind(this)
-        this.$refs.baseIndicator.drawIndicatorContent = this.drawIndicatorContent.bind(this)
-        this.$refs.baseIndicator.drawLabels = this.drawLabels.bind(this)
-        this.$refs.baseIndicator.getCrosshairValue = this.getCrosshairValue.bind(this)
-      }
-    })
+    // 方法绑定现在通过 indicator-ready 事件处理
   },
   
   methods: {
+    // BaseIndicator初始化完成回调
+    onIndicatorReady() {
+      // 绑定自定义方法
+      this.$refs.baseIndicator.calculateIndicatorData = this.calculateIndicatorData.bind(this)
+      this.$refs.baseIndicator.drawIndicatorContent = this.drawIndicatorContent.bind(this)
+      this.$refs.baseIndicator.drawLabels = this.drawLabels.bind(this)
+      this.$refs.baseIndicator.getCrosshairValue = this.getCrosshairValue.bind(this)
+      
+      // 方法绑定完成后，手动触发一次计算
+      if (this.$refs.baseIndicator.visibleData && this.$refs.baseIndicator.visibleData.length > 0) {
+        this.$refs.baseIndicator.calculateIndicatorData()
+        this.$refs.baseIndicator.drawIndicator()
+      }
+    },
+    
     // 计算KDJ数据
     calculateIndicatorData() {
       const baseIndicator = this.$refs.baseIndicator
@@ -76,14 +83,6 @@ export default {
           this.m1, 
           this.m2
         )
-        
-        console.log('KDJ计算结果:', {
-          dataLength: baseIndicator.visibleData.length,
-          kdjLength: this.kdjData.k.length,
-          sampleK: this.kdjData.k.slice(-3),
-          sampleD: this.kdjData.d.slice(-3),
-          sampleJ: this.kdjData.j.slice(-3)
-        })
       } catch (error) {
         console.error('KDJ计算失败:', error)
         this.kdjData = { k: [], d: [], j: [] }
@@ -94,25 +93,12 @@ export default {
     drawIndicatorContent() {
       const baseIndicator = this.$refs.baseIndicator
       if (!baseIndicator || !baseIndicator.ctx) {
-        console.warn('KDJ: Canvas context not available')
         return
       }
       
       if (!this.kdjData.k.length) {
-        console.warn('KDJ: No data to draw')
         return
       }
-      
-      console.log('KDJ绘制开始:', {
-        canvasSize: `${baseIndicator.width}x${baseIndicator.height}`,
-        chartSize: `${baseIndicator.chartWidth}x${baseIndicator.chartHeight}`,
-        dataLength: this.kdjData.k.length,
-        sampleData: {
-          k: this.kdjData.k.slice(-3),
-          d: this.kdjData.d.slice(-3),
-          j: this.kdjData.j.slice(-3)
-        }
-      })
       
       // KDJ范围固定为0-100
       const minValue = 0
@@ -130,8 +116,6 @@ export default {
         
         // 绘制J线
         baseIndicator.drawLine(this.kdjData.j, this.getColor('KDJ_J'), 1.5, minValue, maxValue)
-        
-        console.log('KDJ绘制完成')
       } catch (error) {
         console.error('KDJ绘制失败:', error)
       }

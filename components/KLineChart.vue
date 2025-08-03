@@ -62,6 +62,7 @@
       
       <!-- 技术指标组件（替代原来的Canvas绘制） -->
       <VolumeIndicator
+        ref="volumeIndicator"
         v-if="currentPeriod !== 'minute' && currentIndicator === 'VOLUME'"
         :kline-data="klineData"
         :visible-data="visibleData"
@@ -83,6 +84,7 @@
       />
       
       <MACDIndicator
+        ref="macdIndicator"
         v-if="currentPeriod !== 'minute' && currentIndicator === 'MACD'"
         :kline-data="klineData"
         :visible-data="visibleData"
@@ -104,6 +106,7 @@
       />
       
       <RSIIndicator
+        ref="rsiIndicator"
         v-if="currentPeriod !== 'minute' && currentIndicator === 'RSI'"
         :kline-data="klineData"
         :visible-data="visibleData"
@@ -125,6 +128,7 @@
       />
       
       <KDJIndicator
+        ref="kdjIndicator"
         v-if="currentPeriod !== 'minute' && currentIndicator === 'KDJ'"
         :kline-data="klineData"
         :visible-data="visibleData"
@@ -145,8 +149,8 @@
         @touch-end="onIndicatorTouchEnd"
       />
       
-      <!-- 指标切换下拉框（仅在非分时图模式下显示，定位在成交量图右上角） -->
-      <view v-if="currentPeriod !== 'minute'" class="indicator-dropdown-container">
+      <!-- 指标切换下拉框（仅在非分时图模式下显示，定位在指标图右上角） -->
+      <view v-if="currentPeriod !== 'minute'" class="indicator-dropdown-container" :style="dropdownStyle">
         <view class="indicator-dropdown" @tap="toggleDropdown">
           <text class="dropdown-text">{{ getCurrentIndicatorLabel() }}</text>
           <text class="dropdown-arrow" :class="{ active: showDropdown }">▼</text>
@@ -203,7 +207,7 @@ const CHART_CONFIG = {
     TOP: 10,       // 顶部边距
     BOTTOM: 35,    // 分时图底部边距，为时间标签预留空间
     VOLUME_GAP: 20, // K线图和成交量图间隔
-    VOLUME_HEIGHT: 35, // 成交量图高度
+    VOLUME_HEIGHT: 80, // 成交量图高度
     EXTRA_SPACE: 0    // 额外空间
   },
   
@@ -442,6 +446,8 @@ export default {
         UP: CHART_CONFIG.COLORS.UP,
         DOWN: CHART_CONFIG.COLORS.DOWN,
         NEUTRAL: CHART_CONFIG.COLORS.NEUTRAL,
+        GRID: CHART_CONFIG.COLORS.GRID, // 添加网格线颜色传递
+        CROSSHAIR: CHART_CONFIG.COLORS.CROSSHAIR, // 添加十字线颜色传递
         MACD_DIF: CHART_CONFIG.COLORS.MACD_DIF,
         MACD_DEA: CHART_CONFIG.COLORS.MACD_DEA,
         MACD_HISTOGRAM: CHART_CONFIG.COLORS.MACD_HISTOGRAM,
@@ -467,6 +473,37 @@ export default {
       }
     },
     
+    // 下拉框动态样式，定位到指标图右上角
+    dropdownStyle() {
+      try {
+        const layout = this.calculateChartLayout()
+        // 安全检查，如果layout还没准备好，使用默认位置
+        if (!layout || layout.volumeChartTop === undefined) {
+          return {
+            position: 'absolute',
+            bottom: '10px', // 默认位置
+            right: '0px',
+            zIndex: 20
+          }
+        }
+        
+        return {
+          position: 'absolute',
+          top: `${layout.volumeChartTop + 5}px`, // 指标图顶部往下5px
+          right: '0px',
+          zIndex: 20
+        }
+      } catch (error) {
+        // 如果计算失败，使用默认位置
+        return {
+          position: 'absolute',
+          bottom: '10px',
+          right: '0px',
+          zIndex: 20
+        }
+      }
+    },
+    
     // 布局参数（供指标组件使用）
     leftPadding() {
       return CHART_CONFIG.PADDING.LEFT
@@ -486,7 +523,10 @@ export default {
         const endIndex = this.klineData.length
         const visibleCount = this.getVisibleCount()
         const startIndex = Math.max(0, endIndex - visibleCount)
-        return this.klineData.slice(startIndex, endIndex)
+        const result = this.klineData.slice(startIndex, endIndex)
+        
+        // 强制返回新的数组引用以触发响应式更新
+        return [...result]
       }
     }
   },
@@ -570,9 +610,47 @@ export default {
           this.loadKlineData()
         }, 100)
       }
+    },
+    
+    // 监听可见数量变化，手动触发指标更新
+    currentVisibleCount(newCount, oldCount) {
+      
+      // 手动触发指标组件更新
+      this.$nextTick(() => {
+        this.updateIndicators()
+      })
     }
   },
   methods: {
+    // 手动更新所有指标组件
+    updateIndicators() {
+      // 获取所有指标组件的引用
+      const indicatorRefs = [
+        this.$refs.volumeIndicator,
+        this.$refs.macdIndicator, 
+        this.$refs.rsiIndicator,
+        this.$refs.kdjIndicator
+      ].filter(ref => ref) // 过滤掉不存在的引用
+      
+      // 强制更新每个指标组件
+      indicatorRefs.forEach((indicatorRef, index) => {
+        if (indicatorRef && indicatorRef.$refs && indicatorRef.$refs.baseIndicator) {
+          const baseIndicator = indicatorRef.$refs.baseIndicator
+          
+          if (typeof baseIndicator.calculateIndicatorData === 'function') {
+            // 强制更新指标组件，让Vue重新传递props
+            indicatorRef.$forceUpdate()
+            
+            // 等待组件更新完成再调用计算方法
+            this.$nextTick(() => {
+              baseIndicator.calculateIndicatorData()
+              baseIndicator.drawIndicator()
+            })
+          }
+        }
+      })
+    },
+    
     // 时间转换辅助方法
     
     /**
@@ -2268,6 +2346,7 @@ export default {
         
         // 如果数量有明显变化才更新
         if (Math.abs(newVisibleCount - this.currentVisibleCount) >= 1) {
+          
           // 使用统一的缩放处理方法，但传递'touch'标识
           this.currentVisibleCount = newVisibleCount
           
@@ -3173,10 +3252,7 @@ export default {
   -ms-user-select: none;
   
   .indicator-dropdown-container {
-    position: absolute;
-    bottom: 45px; /* 定位在成交量图区域的右上角 */
-    right: 10px;
-    z-index: 20;
+    /* 位置通过内联样式控制 */
     
     .indicator-dropdown {
       background: rgba(255, 255, 255, 0.95);

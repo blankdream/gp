@@ -1,16 +1,12 @@
 <template>
-  <view class="base-indicator">
-    <canvas 
-      class="indicator-canvas" 
-      :id="canvasId"
-      type="2d"
-      :disable-scroll="false"
-      :style="`width: ${width}px; height: ${height}px;`"
-      @touchstart="onTouchStart"
-      @touchmove="onTouchMove"
-      @touchend="onTouchEnd"
-    ></canvas>
-  </view>
+  <BaseIndicator
+    v-bind="$props"
+    ref="baseIndicator"
+    @indicator-ready="onIndicatorReady"
+    @touch-start="$emit('touch-start', $event)"
+    @touch-move="$emit('touch-move', $event)"
+    @touch-end="$emit('touch-end', $event)"
+  />
 </template>
 
 <script>
@@ -19,7 +15,9 @@ import TechnicalCalculator from '@/utils/TechnicalCalculator.js'
 
 export default {
   name: "VolumeIndicator",
-  extends: BaseIndicator,
+  components: {
+    BaseIndicator
+  },
   
   data() {
     return {
@@ -27,16 +25,30 @@ export default {
     }
   },
   
+  mounted() {
+    // 方法绑定现在通过 indicator-ready 事件处理
+  },
+  
   methods: {
+    // BaseIndicator初始化完成回调
+    onIndicatorReady() {
+      // 绑定自定义方法
+      this.$refs.baseIndicator.calculateIndicatorData = this.calculateIndicatorData.bind(this)
+      this.$refs.baseIndicator.drawIndicatorContent = this.drawIndicatorContent.bind(this)
+      this.$refs.baseIndicator.drawLabels = this.drawLabels.bind(this)
+      this.$refs.baseIndicator.getCrosshairValue = this.getCrosshairValue.bind(this)
+    },
+    
     // 计算成交量数据
     calculateIndicatorData() {
-      if (!this.visibleData || this.visibleData.length === 0) {
+      const baseIndicator = this.$refs.baseIndicator
+      if (!baseIndicator || !baseIndicator.visibleData || baseIndicator.visibleData.length === 0) {
         this.volumeData = []
         return
       }
       
       // 成交量数据直接来自K线数据
-      this.volumeData = this.visibleData.map(item => ({
+      this.volumeData = baseIndicator.visibleData.map(item => ({
         volume: item.volume || 0,
         isUp: item.close >= item.open,
         change: item.close - item.open
@@ -45,7 +57,8 @@ export default {
     
     // 绘制成交量柱状图
     drawIndicatorContent() {
-      if (!this.ctx || !this.volumeData.length) return
+      const baseIndicator = this.$refs.baseIndicator
+      if (!baseIndicator || !baseIndicator.ctx || !this.volumeData.length) return
       
       // 计算成交量范围
       const volumes = this.volumeData.map(item => item.volume)
@@ -54,50 +67,51 @@ export default {
       
       if (maxVolume === 0) return
       
-      const rectWidth = Math.max(1, this.barWidth * 0.8)
+      const rectWidth = Math.max(1, baseIndicator.barWidth * 0.8)
       
       // 绘制成交量柱
       for (let i = 0; i < this.volumeData.length; i++) {
         const item = this.volumeData[i]
         
         if (item.volume > 0) {
-          const x = this.leftPadding + i * this.barWidth + this.barWidth / 2
-          const barHeight = (item.volume / maxVolume) * this.chartHeight
-          const barY = this.topPadding + this.chartHeight - barHeight
+          const x = baseIndicator.leftPadding + i * baseIndicator.barWidth + baseIndicator.barWidth / 2
+          const barHeight = (item.volume / maxVolume) * baseIndicator.chartHeight
+          const barY = baseIndicator.topPadding + baseIndicator.chartHeight - barHeight
           
           // 根据涨跌设置颜色
-          let barColor = this.colors.NEUTRAL
+          let barColor = baseIndicator.colors.NEUTRAL
           if (item.isUp) {
-            barColor = this.colors.UP
+            barColor = baseIndicator.colors.UP
           } else if (item.change < 0) {
-            barColor = this.colors.DOWN
+            barColor = baseIndicator.colors.DOWN
           }
           
-          this.ctx.fillStyle = barColor
-          this.ctx.fillRect(x - rectWidth / 2, barY, rectWidth, barHeight)
+          baseIndicator.ctx.fillStyle = barColor
+          baseIndicator.ctx.fillRect(x - rectWidth / 2, barY, rectWidth, barHeight)
         }
       }
     },
     
     // 绘制成交量标签
     drawLabels() {
-      if (!this.ctx || !this.volumeData.length) return
+      const baseIndicator = this.$refs.baseIndicator
+      if (!baseIndicator || !baseIndicator.ctx || !this.volumeData.length) return
       
       const volumes = this.volumeData.map(item => item.volume)
       const maxVolume = Math.max(...volumes)
       
       if (maxVolume === 0) return
       
-      this.ctx.fillStyle = '#666666'
-      this.ctx.font = '11px sans-serif'
-      this.ctx.textAlign = 'right'
+      baseIndicator.ctx.fillStyle = '#666666'
+      baseIndicator.ctx.font = '11px sans-serif'
+      baseIndicator.ctx.textAlign = 'right'
       
       // 显示最大成交量
       const maxVolumeStr = this.formatVolumeShort(maxVolume)
-      this.ctx.fillText(maxVolumeStr, this.leftPadding - 5, this.topPadding + 12)
+      baseIndicator.ctx.fillText(maxVolumeStr, baseIndicator.leftPadding - 5, baseIndicator.topPadding + 12)
       
       // 显示0
-      this.ctx.fillText('0', this.leftPadding - 5, this.topPadding + this.chartHeight - 2)
+      baseIndicator.ctx.fillText('0', baseIndicator.leftPadding - 5, baseIndicator.topPadding + baseIndicator.chartHeight - 2)
     },
     
     // 格式化成交量显示（简短版本）
@@ -115,8 +129,9 @@ export default {
     
     // 获取十字线位置的成交量数值
     getCrosshairValue() {
-      if (this.crosshairIndex >= 0 && this.crosshairIndex < this.volumeData.length) {
-        const volumeData = this.volumeData[this.crosshairIndex]
+      const baseIndicator = this.$refs.baseIndicator
+      if (baseIndicator && baseIndicator.crosshairIndex >= 0 && baseIndicator.crosshairIndex < this.volumeData.length) {
+        const volumeData = this.volumeData[baseIndicator.crosshairIndex]
         return {
           volume: volumeData ? volumeData.volume : 0,
           volumeStr: volumeData ? this.formatVolumeShort(volumeData.volume) : '--'
