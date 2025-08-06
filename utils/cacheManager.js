@@ -7,8 +7,80 @@ class CacheManager {
     this.cache = new Map()
     this.cacheTimeout = new Map()
     this.defaultTTL = 2 * 60 * 60 * 1000 // 默认缓存2小时
+    this.storagePrefix = 'cache_'
+    
+    // 初始化时从本地存储恢复缓存
+    this.loadFromStorage()
   }
 
+  /**
+   * 从本地存储加载缓存
+   */
+  loadFromStorage() {
+    try {
+      const keys = uni.getStorageInfoSync().keys
+      const now = Date.now()
+      
+      keys.forEach(key => {
+        if (key.startsWith(this.storagePrefix)) {
+          try {
+            const cachedItem = uni.getStorageSync(key)
+            if (cachedItem && cachedItem.timestamp && cachedItem.data) {
+              // 检查是否过期
+              const expireTime = cachedItem.timestamp + (cachedItem.ttl || this.defaultTTL)
+              if (now < expireTime) {
+                // 未过期，恢复到内存缓存
+                const cacheKey = key.replace(this.storagePrefix, '')
+                this.cache.set(cacheKey, cachedItem)
+                
+                // 设置过期定时器
+                const remainingTTL = expireTime - now
+                const timeoutId = setTimeout(() => {
+                  this.delete(cacheKey)
+                }, remainingTTL)
+                this.cacheTimeout.set(cacheKey, timeoutId)
+              } else {
+                // 已过期，从本地存储删除
+                uni.removeStorageSync(key)
+              }
+            }
+          } catch (e) {
+            // 恢复单个缓存项失败，删除该项
+            uni.removeStorageSync(key)
+          }
+        }
+      })
+    } catch (error) {
+      console.warn('加载缓存失败:', error)
+    }
+  }
+
+  /**
+   * 保存缓存到本地存储
+   * @param {string} key 缓存键
+   * @param {object} cachedItem 缓存项
+   */
+  saveToStorage(key, cachedItem) {
+    try {
+      const storageKey = this.storagePrefix + key
+      uni.setStorageSync(storageKey, cachedItem)
+    } catch (error) {
+      console.warn('保存缓存到本地存储失败:', error)
+    }
+  }
+
+  /**
+   * 从本地存储删除缓存
+   * @param {string} key 缓存键
+   */
+  removeFromStorage(key) {
+    try {
+      const storageKey = this.storagePrefix + key
+      uni.removeStorageSync(storageKey)
+    } catch (error) {
+      console.warn('从本地存储删除缓存失败:', error)
+    }
+  }
   /**
    * 生成缓存键
    * @param {string} type 缓存类型 (stocks/groups)
@@ -27,11 +99,18 @@ class CacheManager {
    * @param {number} ttl 过期时间（毫秒），默认2小时
    */
   set(key, data, ttl = this.defaultTTL) {
-    // 设置缓存数据
-    this.cache.set(key, {
+    // 创建缓存项
+    const cachedItem = {
       data: data,
-      timestamp: Date.now()
-    })
+      timestamp: Date.now(),
+      ttl: ttl
+    }
+    
+    // 设置内存缓存
+    this.cache.set(key, cachedItem)
+    
+    // 保存到本地存储
+    this.saveToStorage(key, cachedItem)
 
     // 清除之前的定时器
     if (this.cacheTimeout.has(key)) {
@@ -77,6 +156,9 @@ class CacheManager {
       this.cacheTimeout.delete(key)
     }
     
+    // 从本地存储删除
+    this.removeFromStorage(key)
+    
     // 缓存已删除
   }
 
@@ -95,6 +177,20 @@ class CacheManager {
     }
     
     keysToDelete.forEach(key => this.delete(key))
+    
+    // 同时清理本地存储中的相关缓存
+    try {
+      const allKeys = uni.getStorageInfoSync().keys
+      allKeys.forEach(storageKey => {
+        if (storageKey.startsWith(this.storagePrefix) && 
+            storageKey.includes(`${type}_${userId}`)) {
+          uni.removeStorageSync(storageKey)
+        }
+      })
+    } catch (error) {
+      console.warn('清理本地存储缓存失败:', error)
+    }
+    
     // 类型缓存已清除
   }
 
@@ -109,6 +205,19 @@ class CacheManager {
     
     this.cache.clear()
     this.cacheTimeout.clear()
+    
+    // 清除所有本地存储的缓存
+    try {
+      const keys = uni.getStorageInfoSync().keys
+      keys.forEach(key => {
+        if (key.startsWith(this.storagePrefix)) {
+          uni.removeStorageSync(key)
+        }
+      })
+    } catch (error) {
+      console.warn('清除本地存储缓存失败:', error)
+    }
+    
     // 所有缓存已清除
   }
 
